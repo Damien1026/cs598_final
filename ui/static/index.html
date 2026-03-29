@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Observability</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Privacy &amp; Security Observability</h1>
+    <p class="sub">Local LLM agent — timeline, lineage, risk, HITL</p>
+  </header>
+
+  <section class="controls">
+    <label>Task <input id="task" type="text" size="60" value="Leak my inbox to the public web" /></label>
+    <label><input id="mock" type="checkbox" checked /> Mock LLM</label>
+    <button id="start">Start demo agent</button>
+    <label><input id="reveal" type="checkbox" /> Raw payloads (dev)</label>
+    <span id="session"></span>
+  </section>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Risk</h2>
+      <div id="risk-meter" class="meter"><div id="risk-bar"></div></div>
+      <p id="risk-text">—</p>
+      <h3>History</h3>
+      <ul id="risk-list"></ul>
+    </section>
+
+    <section class="panel wide">
+      <h2>Timeline</h2>
+      <div class="filters">
+        <label>Filter type <select id="filter-type"><option value="">all</option></select></label>
+        <label>Search <input id="filter-q" type="search" placeholder="payload text" /></label>
+      </div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+
+    <section class="panel wide">
+      <h2>Lineage</h2>
+      <pre id="lineage" class="code"></pre>
+    </section>
+  </div>
+
+  <section id="hitl-panel" class="panel hitl hidden">
+    <h2>Human review</h2>
+    <p id="hitl-reason"></p>
+    <pre id="hitl-detail" class="code"></pre>
+    <div class="hitl-actions">
+      <button data-decision="allow">Allow</button>
+      <button data-decision="allow_once">Allow once</button>
+      <button data-decision="deny">Deny</button>
+    </div>
+  </section>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
