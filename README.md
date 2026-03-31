@@ -5,9 +5,9 @@ Runtime monitoring for a local tool-calling LLM agent: **taint tracking**, **lin
 ## Quick start
 
 ```bash
-cd f:\cs598_final
-python -m venv .venv
-.venv\Scripts\activate
+cd ~/cs598_final
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -27,8 +27,8 @@ python -m agent.cli --task "Summarize my inbox and save notes" --mock-llm
 
 ### Non-interactive HITL (eval / CI)
 
-```powershell
-$env:OBS_HITL_AUTO = "allow"   # or deny | allow_once
+```bash
+export OBS_HITL_AUTO="allow"   # or deny | allow_once
 python -m agent.cli --task "..." --mock-llm
 ```
 
@@ -37,7 +37,7 @@ python -m agent.cli --task "..." --mock-llm
 Set `OLLAMA_MODEL` (default `llama3.2`) and ensure Ollama is running:
 
 ```bash
-set OLLAMA_BASE_URL=http://127.0.0.1:11434
+export OLLAMA_BASE_URL=http://127.0.0.1:11434
 python -m agent.cli --task "Your task"
 ```
 
