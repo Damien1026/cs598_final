@@ -161,9 +161,9 @@ class MonitoredIO:
             return False
 
         if pr.outcome == PolicyOutcome.hitl:
-            import uuid
+            import uuid as _uuid
 
-            hid = str(uuid.uuid4())
+            hid = str(_uuid.uuid4())
             await self.hub.emit(
                 ObsEvent(
                     step_id=self.hub.step_id,
@@ -233,7 +233,7 @@ class MonitoredIO:
         step = self.hub.next_step()
         labels = self.hub.taint.labels_for_tool_args(body, artifact_ids)
         external = not (url.startswith("http://127.0.0.1") or url.startswith("mock://"))
-        sink = "http_post_external" if external else "http_get_external"
+        sink = "http_post_external" if external else "http_post_internal"
         args = {"url": url, "body_len": len(body)}
         ok = await self._apply_policy_hitl(
             sink=sink,

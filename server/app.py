@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -58,13 +60,14 @@ def get_hub() -> ObsHub:
     return _hub
 
 
-app = FastAPI(title="Observability Agent Dashboard")
-
-
-@app.on_event("startup")
-async def startup() -> None:
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     get_workspace()
     get_hub()
+    yield
+
+
+app = FastAPI(title="Observability Agent Dashboard", lifespan=lifespan)
 
 
 class StartBody(BaseModel):

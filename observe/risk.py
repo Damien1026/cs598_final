@@ -18,6 +18,7 @@ SINK_WEIGHT = {
     "http_post_external": 1.0,
     "file_write": 0.45,
     "http_get_external": 0.25,
+    "http_post_internal": 0.15,
     "tool_result": 0.1,
 }
 

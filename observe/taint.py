@@ -100,7 +100,3 @@ def infer_labels_from_text(text: str) -> set[str]:
     ):
         labels.add("internal_doc")
     return labels
-
-    def attach_labels_to_message_text(self, text: str, refs: list[str]) -> Artifact:
-        labels = self.labels_for_tool_args(text, refs)
-        return self.new_artifact("llm_context", labels, preview=text)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -90,7 +91,6 @@ def evaluate_sink(
 
 def action_fingerprint(tool: str, args: dict[str, Any], sink: str) -> str:
     import hashlib
-    import json
 
     norm = json.dumps({"tool": tool, "args": args, "sink": sink}, sort_keys=True)
     return hashlib.sha256(norm.encode()).hexdigest()[:16]

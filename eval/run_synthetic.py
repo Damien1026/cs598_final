@@ -23,7 +23,7 @@ async def run_one(
     task: str,
     mock_llm: bool,
     hitl_auto: str | None,
-) -> list:
+) -> tuple[list, float]:
     if hitl_auto:
         os.environ["OBS_HITL_AUTO"] = hitl_auto
     else:
