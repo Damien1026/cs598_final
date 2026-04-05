@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any
+import uuid
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -64,6 +65,128 @@ class OllamaLLM:
             "content": msg.get("content") or "",
             "tool_calls": _norm_tool_calls(msg.get("tool_calls")),
         }
+
+
+class GeminiLLM:
+    """Gemini LLM using google-generativeai SDK.
+
+    Maintains Gemini-native message history internally.
+    Exposed via chat() for single-turn use and stream_chat() for streaming.
+    """
+
+    CONTEXT_WINDOWS: dict[str, int] = {
+        "gemini-2.5-flash": 1_048_576,
+        "gemini-2.5-pro": 2_097_152,
+        "gemini-2.0-flash": 1_048_576,
+        "gemini-1.5-pro": 2_097_152,
+        "gemini-1.5-flash": 1_048_576,
+        "gemini-2.0-flash-lite": 1_048_576,
+    }
+
+    def __init__(self, model_name: str = "gemini-2.5-flash", api_key: str | None = None) -> None:
+        import google.generativeai as genai  # lazy import
+
+        api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        genai.configure(api_key=api_key)
+        self._genai = genai
+        self.model_name = model_name
+        self.context_window = self.CONTEXT_WINDOWS.get(model_name, 1_048_576)
+        self.last_token_count: int = 0
+
+    # ------------------------------------------------------------------ helpers
+
+    def _to_gemini_tools(self, tools_openai: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert OpenAI tools schema to Gemini function_declarations format."""
+        fn_decls = []
+        for t in tools_openai:
+            fn = t.get("function", {})
+            fn_decls.append(
+                {
+                    "name": fn["name"],
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {"type": "object", "properties": {}}),
+                }
+            )
+        return [{"function_declarations": fn_decls}]
+
+    def _make_model(self, system_prompt: str, tools_openai: list[dict[str, Any]] | None):
+        gemini_tools = self._to_gemini_tools(tools_openai) if tools_openai else None
+        return self._genai.GenerativeModel(
+            model_name=self.model_name,
+            system_instruction=system_prompt or None,
+            tools=gemini_tools,
+        )
+
+    def _parse_response(self, response: Any) -> tuple[str, list[dict[str, Any]], int]:
+        """Returns (text_content, tool_calls, token_count)."""
+        content = ""
+        tool_calls: list[dict[str, Any]] = []
+        try:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, "text") and part.text:
+                    content += part.text
+                if hasattr(part, "function_call") and part.function_call.name:
+                    tool_calls.append(
+                        {
+                            "id": str(uuid.uuid4())[:8],
+                            "name": part.function_call.name,
+                            "arguments": dict(part.function_call.args),
+                        }
+                    )
+        except (IndexError, AttributeError):
+            pass
+        tokens: int = 0
+        try:
+            tokens = response.usage_metadata.total_token_count or 0
+        except AttributeError:
+            pass
+        self.last_token_count = tokens
+        return content, tool_calls, tokens
+
+    # ------------------------------------------------------------------ public API
+
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        system_prompt: str = "",
+    ) -> dict[str, Any]:
+        model = self._make_model(system_prompt, tools)
+        response = await model.generate_content_async(messages)
+        content, tool_calls, tokens = self._parse_response(response)
+        return {"content": content, "tool_calls": tool_calls, "tokens": tokens}
+
+    async def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        system_prompt: str = "",
+    ) -> AsyncIterator[str]:
+        model = self._make_model(system_prompt, tools)
+        response = await model.generate_content_async(messages, stream=True)
+        async for chunk in response:
+            try:
+                if chunk.text:
+                    yield chunk.text
+            except Exception:
+                pass
+        try:
+            self.last_token_count = response.usage_metadata.total_token_count or 0
+        except Exception:
+            pass
+
+
+def make_llm(spec: str) -> "GeminiLLM | OllamaLLM":
+    """Factory: 'gemini:gemini-2.0-flash' | 'ollama:llama3.2'"""
+    if ":" in spec:
+        provider, model = spec.split(":", 1)
+    else:
+        provider, model = spec, ""
+    if provider == "gemini":
+        return GeminiLLM(model_name=model or "gemini-2.0-flash")
+    if provider == "ollama":
+        return OllamaLLM(model=model or "llama3.2")
+    raise ValueError(f"Unknown LLM provider: {provider!r}")
 
 
 class MockLLM:

@@ -23,6 +23,8 @@ class EventType(str, Enum):
     session_start = "session_start"
     session_end = "session_end"
     risk_update = "risk_update"
+    context_usage = "context_usage"
+    context_warning = "context_warning"
 
 
 class ObsEvent(BaseModel):

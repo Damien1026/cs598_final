@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -10,15 +10,36 @@ from observe.events import EventType, ObsEvent
 from observe.hub import ObsHub
 from observe.policy import PolicyOutcome, PolicyResult, action_fingerprint, evaluate_sink
 from observe.risk import compute_risk
-from observe.taint import Sensitivity
+from observe.taint import Sensitivity, infer_labels_from_text
+
+if TYPE_CHECKING:
+    from agent.sources.email import EmailSource
+    from agent.sources.rag import RAGSource
 
 
 class MonitoredIO:
     """All source/sink I/O goes through here for taint + policy + events."""
 
-    def __init__(self, hub: ObsHub, workspace_root: Path) -> None:
+    def __init__(
+        self,
+        hub: ObsHub,
+        workspace_root: Path,
+        *,
+        agent_id: str = "",
+        email_source: "EmailSource | None" = None,
+        rag_source: "RAGSource | None" = None,
+    ) -> None:
         self.hub = hub
         self.workspace_root = workspace_root.resolve()
+        self.agent_id = agent_id
+        self._email_source = email_source
+        self._rag_source = rag_source
+
+    def _p(self, **kwargs: Any) -> dict[str, Any]:
+        """Inject agent_id into every event payload."""
+        if self.agent_id:
+            kwargs["agent_id"] = self.agent_id
+        return kwargs
 
     def _abs_path(self, rel: str) -> Path:
         p = (self.workspace_root / rel).resolve()
@@ -37,11 +58,30 @@ class MonitoredIO:
             ObsEvent(
                 step_id=step,
                 event_type=EventType.source_fetch,
-                payload={
-                    "origin": "gmail_mock",
-                    "artifact_id": art.id,
-                    "byte_len": len(text),
-                },
+                payload=self._p(origin="gmail_mock", artifact_id=art.id, byte_len=len(text)),
+                labels={"labels": sorted(art.labels)},
+            )
+        )
+        return text, art.id
+
+    async def source_email(self) -> tuple[str, str]:
+        """Fetch real email via IMAP. Falls back to mock if source not configured."""
+        step = self.hub.next_step()
+        if self._email_source is not None:
+            import asyncio
+            text = await asyncio.get_running_loop().run_in_executor(None, self._email_source.fetch)
+        else:
+            text = (
+                "Inbox: (1) From: alice@example.com Subject: Your order #9922\n"
+                "Body: Hi, your shipment arrives Tuesday. SSN last four: 1234\n"
+            )
+        labels = infer_labels_from_text(text) or {"public"}
+        art = self.hub.taint.new_artifact("email", labels, preview=text)
+        await self.hub.emit(
+            ObsEvent(
+                step_id=step,
+                event_type=EventType.source_fetch,
+                payload=self._p(origin="email", artifact_id=art.id, byte_len=len(text)),
                 labels={"labels": sorted(art.labels)},
             )
         )
@@ -49,20 +89,23 @@ class MonitoredIO:
 
     async def source_rag_search(self, query: str) -> tuple[str, str]:
         step = self.hub.next_step()
-        text = (
-            f"[RAG chunk for '{query}'] Internal roadmap Q3: deprecate legacy API; "
-            "API_KEY_ROTATION=sk-internal-demo-not-real"
-        )
-        art = self.hub.taint.new_artifact("rag_search", ["internal_doc", "credential"], preview=text)
+        if self._rag_source is not None:
+            import asyncio
+            text = await asyncio.get_running_loop().run_in_executor(
+                None, self._rag_source.search, query
+            )
+        else:
+            text = (
+                f"[RAG chunk for '{query}'] Internal roadmap Q3: deprecate legacy API; "
+                "API_KEY_ROTATION=sk-internal-demo-not-real"
+            )
+        labels = infer_labels_from_text(text) or {"public"}
+        art = self.hub.taint.new_artifact("rag_search", labels, preview=text)
         await self.hub.emit(
             ObsEvent(
                 step_id=step,
                 event_type=EventType.source_fetch,
-                payload={
-                    "origin": "rag_search",
-                    "query": query,
-                    "artifact_id": art.id,
-                },
+                payload=self._p(origin="rag_search", query=query, artifact_id=art.id),
                 labels={"labels": sorted(art.labels)},
             )
         )
@@ -81,11 +124,7 @@ class MonitoredIO:
             ObsEvent(
                 step_id=step,
                 event_type=EventType.source_fetch,
-                payload={
-                    "origin": "file_read",
-                    "path": rel_path,
-                    "artifact_id": art.id,
-                },
+                payload=self._p(origin="file_read", path=rel_path, artifact_id=art.id),
                 labels={"labels": sorted(art.labels)},
             )
         )
@@ -100,13 +139,13 @@ class MonitoredIO:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 r = await client.get(url)
                 text = r.text[:8000]
-            labels = ["public"]
+            labels = list(infer_labels_from_text(text) or {"public"})
         art = self.hub.taint.new_artifact("http_get", labels, preview=text)
         await self.hub.emit(
             ObsEvent(
                 step_id=step,
                 event_type=EventType.source_fetch,
-                payload={"origin": "http_get", "url": url, "artifact_id": art.id},
+                payload=self._p(origin="http_get", url=url, artifact_id=art.id),
                 labels={"labels": sorted(art.labels)},
             )
         )
@@ -149,12 +188,7 @@ class MonitoredIO:
                 ObsEvent(
                     step_id=self.hub.step_id,
                     event_type=EventType.policy_violation,
-                    payload={
-                        "rule": pr.rule_id,
-                        "reason": pr.reason,
-                        "sink": sink,
-                        "tool": tool,
-                    },
+                    payload=self._p(rule=pr.rule_id, reason=pr.reason, sink=sink, tool=tool),
                     labels={"labels": sorted(labels)},
                 )
             )
@@ -168,15 +202,15 @@ class MonitoredIO:
                 ObsEvent(
                     step_id=self.hub.step_id,
                     event_type=EventType.hitl_request,
-                    payload={
-                        "id": hid,
-                        "reason": pr.reason,
-                        "sink": sink,
-                        "tool": tool,
-                        "args": args,
-                        "labels": sorted(labels),
-                        "fingerprint": fp,
-                    },
+                    payload=self._p(
+                        id=hid,
+                        reason=pr.reason,
+                        sink=sink,
+                        tool=tool,
+                        args=args,
+                        labels=sorted(labels),
+                        fingerprint=fp,
+                    ),
                     labels={},
                 )
             )
@@ -219,11 +253,11 @@ class MonitoredIO:
             ObsEvent(
                 step_id=step,
                 event_type=EventType.sink_write,
-                payload={
-                    "sink": "file_write",
-                    "path": rel_path,
-                    "artifact_ids": artifact_ids + [out_art.id],
-                },
+                payload=self._p(
+                    sink="file_write",
+                    path=rel_path,
+                    artifact_ids=artifact_ids + [out_art.id],
+                ),
                 labels={"labels": sorted(labels)},
             )
         )
@@ -252,14 +286,14 @@ class MonitoredIO:
             ObsEvent(
                 step_id=step,
                 event_type=EventType.sink_write,
-                payload={"sink": sink, "url": url, "artifact_ids": artifact_ids},
+                payload=self._p(sink=sink, url=url, artifact_ids=artifact_ids),
                 labels={"labels": sorted(labels)},
             )
         )
         return True
 
 
-def tools_schema() -> list[dict[str, Any]]:
+def tools_schema(*, use_real_email: bool = False) -> list[dict[str, Any]]:
     return [
         {
             "type": "function",
@@ -296,8 +330,8 @@ def tools_schema() -> list[dict[str, Any]]:
         {
             "type": "function",
             "function": {
-                "name": "fetch_gmail_mock",
-                "description": "Fetch mock private inbox contents",
+                "name": "fetch_email" if use_real_email else "fetch_gmail_mock",
+                "description": "Fetch inbox emails" if use_real_email else "Fetch mock private inbox contents",
                 "parameters": {"type": "object", "properties": {}},
             },
         },
