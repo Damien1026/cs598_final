@@ -102,6 +102,29 @@ async def start_agent(body: StartBody) -> dict[str, Any]:
     return {"status": "started"}
 
 
+@app.post("/api/ingest")
+async def ingest_event(event: dict[str, Any]) -> dict[str, Any]:
+    """Accept a raw event dict from an external process (e.g. CLI chat mode) and broadcast it."""
+    hub = get_hub()
+    try:
+        obs = ObsEvent(**event)
+        hub.events.append(obs)
+        d = obs.model_dump(mode="json")
+        d["payload"] = redact_obj(d.get("payload", {}))
+        dead: list[WebSocket] = []
+        for ws in _ws_clients:
+            try:
+                await ws.send_json({"type": "event", "data": d})
+            except Exception:
+                dead.append(ws)
+        for x in dead:
+            if x in _ws_clients:
+                _ws_clients.remove(x)
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @app.post("/api/hitl/{hid}")
 async def hitl_respond(hid: str, body: HitlBody) -> dict[str, Any]:
     hub = get_hub()

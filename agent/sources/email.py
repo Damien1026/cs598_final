@@ -60,8 +60,16 @@ class EmailSource:
             return "(email source not configured — set EMAIL_USER and EMAIL_PASSWORD in .env)"
 
         with imaplib.IMAP4_SSL(self.host, self.port) as mail:
+            # 163/NetEase IMAP requires an ID command before it permits SELECT/SEARCH
+            imaplib.Commands["ID"] = ("NONAUTH", "AUTH", "SELECTED")
+            mail._simple_command("ID", '("name" "Python" "version" "3" "vendor" "cs598")')
             mail.login(self.user, self.password)
-            mail.select("INBOX", readonly=True)
+            status, _ = mail.select("INBOX", readonly=True)
+            if status != "OK":
+                raise RuntimeError(
+                    "Could not SELECT INBOX — check that IMAP is enabled in your 163 account settings "
+                    "and that EMAIL_PASSWORD is the auth code (not your login password)."
+                )
             _, data = mail.search(None, "ALL")
             all_ids = data[0].split()
             recent_ids = all_ids[-self.max_messages:]  # latest N

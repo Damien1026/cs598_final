@@ -108,7 +108,7 @@ Orchestrator (Gemini 2.5 Flash — task decomposition)   │
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.9+
 - Internet access for Gemini API calls
 - 163 email account with IMAP enabled *(optional — for real email)*
 

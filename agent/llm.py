@@ -1,10 +1,34 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import re
 import uuid
 from typing import Any, AsyncIterator
+
+_gemini_semaphore = asyncio.Semaphore(2)
+_log = logging.getLogger(__name__)
+
+
+async def _gemini_call_with_retry(coro_fn, *args, max_retries: int = 6, **kwargs):
+    """Run an async Gemini SDK call with exponential backoff on rate-limit errors."""
+    delay = 5.0
+    for attempt in range(max_retries):
+        try:
+            async with _gemini_semaphore:
+                return await coro_fn(*args, **kwargs)
+        except Exception as exc:
+            msg = str(exc).lower()
+            is_rate_limit = "429" in msg or "resource_exhausted" in msg or "quota" in msg
+            if not is_rate_limit or attempt == max_retries - 1:
+                raise
+            jitter = delay * 0.2
+            wait = delay + (uuid.uuid4().int % 1000) / 1000 * jitter
+            _log.warning("Gemini rate limit hit, retrying in %.1fs (attempt %d/%d)", wait, attempt + 1, max_retries)
+            await asyncio.sleep(wait)
+            delay = min(delay * 2, 60.0)
 
 import httpx
 
@@ -152,7 +176,7 @@ class GeminiLLM:
         system_prompt: str = "",
     ) -> dict[str, Any]:
         model = self._make_model(system_prompt, tools)
-        response = await model.generate_content_async(messages)
+        response = await _gemini_call_with_retry(model.generate_content_async, messages)
         content, tool_calls, tokens = self._parse_response(response)
         return {"content": content, "tool_calls": tool_calls, "tokens": tokens}
 
@@ -163,7 +187,7 @@ class GeminiLLM:
         system_prompt: str = "",
     ) -> AsyncIterator[str]:
         model = self._make_model(system_prompt, tools)
-        response = await model.generate_content_async(messages, stream=True)
+        response = await _gemini_call_with_retry(model.generate_content_async, messages, stream=True)
         async for chunk in response:
             try:
                 if chunk.text:

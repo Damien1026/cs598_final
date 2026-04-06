@@ -6,6 +6,26 @@ import os
 import sys
 from pathlib import Path
 
+_DASHBOARD_URL = os.environ.get("OBS_DASHBOARD_URL", "http://127.0.0.1:8765")
+
+
+def _register_dashboard_forwarder(hub: "ObsHub") -> None:  # type: ignore[name-defined]
+    """Subscribe a callback that forwards every event to the running dashboard server.
+    Silently skips if the dashboard is not reachable."""
+    import httpx
+
+    async def _forward(event) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=1.0) as client:
+                await client.post(
+                    f"{_DASHBOARD_URL}/api/ingest",
+                    json=event.model_dump(mode="json"),
+                )
+        except Exception:
+            pass
+
+    hub.bus.subscribe(_forward)
+
 
 # ------------------------------------------------------------------ single-task mode (legacy)
 
@@ -50,6 +70,7 @@ async def _run_cluster(
     (workspace / "workspace" / "reports").mkdir(parents=True, exist_ok=True)
 
     hub = ObsHub(jsonl_path=log, trust_path=trust)
+    _register_dashboard_forwarder(hub)
     llm = make_llm(llm_spec)
 
     email_source = EmailSource() if use_email else None
