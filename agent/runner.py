@@ -137,7 +137,8 @@ class MonitoredAgent:
             text, aid = await self.io.source_rag_search(str(args.get("query", "")))
             return text, [aid]
         if name == "http_get":
-            text, aid = await self.io.source_http_get(str(args.get("url", "")))
+            aids = list(args.get("artifact_ids") or [])
+            text, aid = await self.io.source_http_get(str(args.get("url", "")), artifact_ids=aids or None)
             return text, [aid]
         if name == "http_post":
             url = str(args.get("url", ""))

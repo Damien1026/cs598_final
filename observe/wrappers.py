@@ -130,11 +130,28 @@ class MonitoredIO:
         )
         return text, art.id
 
-    async def source_http_get(self, url: str) -> tuple[str, str]:
+    async def source_http_get(self, url: str, artifact_ids: list[str] | None = None) -> tuple[str, str]:
         step = self.hub.next_step()
-        if url.startswith("http://127.0.0.1") or url.startswith("mock://"):
+        is_external = not (url.startswith("http://127.0.0.1") or url.startswith("mock://"))
+
+        # Pre-flight policy: if tainted artifacts flow into an external GET, apply R2
+        if artifact_ids and is_external:
+            labels_in = self.hub.taint.labels_for_tool_args(url, artifact_ids)
+            ok = await self._apply_policy_hitl(
+                sink="http_get_external",
+                labels=labels_in,
+                sink_meta={"url": url},
+                tool="http_get",
+                args={"url": url},
+                artifact_ids=artifact_ids,
+            )
+            if not ok:
+                blocked_art = self.hub.taint.new_artifact("http_get", set(), preview="blocked")
+                return "blocked by policy", blocked_art.id
+
+        if not is_external:
             text = '{"status":"ok","msg":"mock response"}'
-            labels = ["public"]
+            labels: list[str] = ["public"]
         else:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 r = await client.get(url)
@@ -204,6 +221,7 @@ class MonitoredIO:
                     event_type=EventType.hitl_request,
                     payload=self._p(
                         id=hid,
+                        rule=pr.rule_id,
                         reason=pr.reason,
                         sink=sink,
                         tool=tool,
@@ -354,7 +372,14 @@ def tools_schema(*, use_real_email: bool = False) -> list[dict[str, Any]]:
                 "description": "HTTP GET URL",
                 "parameters": {
                     "type": "object",
-                    "properties": {"url": {"type": "string"}},
+                    "properties": {
+                        "url": {"type": "string"},
+                        "artifact_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Artifact IDs flowing into the request (e.g. as URL params)",
+                        },
+                    },
                     "required": ["url"],
                 },
             },

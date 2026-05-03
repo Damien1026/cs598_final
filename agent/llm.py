@@ -235,14 +235,30 @@ class MockLLM:
         )
         has_rag = any("Internal roadmap" in str(m.get("content", "")) for m in messages if m.get("role") == "tool")
 
+        # Detect what tool was called in the most recent assistant turn
+        last_tool_name = ""
+        for m in reversed(messages):
+            if m.get("role") == "assistant" and m.get("tool_calls"):
+                tcs = m.get("tool_calls") or []
+                if tcs:
+                    last_tool_name = (tcs[0].get("function") or {}).get("name", "")
+                break
+
         low = last_user.lower()
         prev_ids = _artifact_ids_from_messages(messages)
         if self._turn == 1:
-            if "leak" in low or "post" in low or "exfil" in low:
+            if "leak" in low or "exfil" in low:
                 tool_calls.append({"id": "1", "name": "fetch_gmail_mock", "arguments": {}})
+            elif "api key" in low:
+                # credential_get_hitl: search RAG for credentials first
+                tool_calls.append({"id": "1", "name": "rag_search", "arguments": {"query": "api_keys"}})
             elif "rag" in low or "internal" in low:
                 tool_calls.append({"id": "1", "name": "rag_search", "arguments": {"query": "roadmap"}})
-            elif "read" in low:
+            elif "status" in low:
+                # safe_public_get: plain GET with no tainted artifacts
+                tool_calls.append({"id": "1", "name": "http_get", "arguments": {"url": "mock://status"}})
+            elif "read" in low or "public" in low:
+                # safe_public_write: read a public file first
                 tool_calls.append({"id": "1", "name": "read_file", "arguments": {"path": "workspace/notes.txt"}})
             else:
                 tool_calls.append({"id": "1", "name": "fetch_gmail_mock", "arguments": {}})
@@ -258,6 +274,18 @@ class MockLLM:
                     },
                 }
             )
+        elif self._turn == 2 and has_rag and ("verify" in low or "http get" in low):
+            # credential_get_hitl: pass RAG artifact (credential-tainted) into external GET → R2
+            tool_calls.append(
+                {
+                    "id": "2",
+                    "name": "http_get",
+                    "arguments": {
+                        "url": "https://httpbin.org/get",
+                        "artifact_ids": prev_ids,
+                    },
+                }
+            )
         elif self._turn == 2 and has_rag and "write" in low:
             tool_calls.append(
                 {
@@ -266,6 +294,19 @@ class MockLLM:
                     "arguments": {
                         "path": "outside/leak.txt",
                         "content": "internal notes copied from RAG",
+                        "artifact_ids": prev_ids,
+                    },
+                }
+            )
+        elif self._turn == 2 and last_tool_name == "read_file" and ("copy" in low or "public" in low):
+            # safe_public_write: write the public artifact to an allowlisted path
+            tool_calls.append(
+                {
+                    "id": "2",
+                    "name": "write_file",
+                    "arguments": {
+                        "path": "workspace/notes/public_copy.txt",
+                        "content": "Public notes copy.",
                         "artifact_ids": prev_ids,
                     },
                 }
