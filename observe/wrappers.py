@@ -95,10 +95,19 @@ class MonitoredIO:
                 None, self._rag_source.search, query
             )
         else:
-            text = (
-                f"[RAG chunk for '{query}'] Internal roadmap Q3: deprecate legacy API; "
-                "API_KEY_ROTATION=sk-internal-demo-not-real"
-            )
+            ql = query.lower()
+            if any(k in ql for k in ("api", "key", "credential", "secret")):
+                # Returns credential-only taint (no internal_doc markers)
+                text = (
+                    f"[RAG chunk for '{query}'] API_KEY_VALUE=secret_token_abc; "
+                    "WEBHOOK_SECRET=wh_token_xyz789"
+                )
+            else:
+                # Returns internal_doc-only taint (no credential markers)
+                text = (
+                    f"[RAG chunk for '{query}'] Internal roadmap Q3: deprecate legacy API; "
+                    "migrate to v2 by end of Q4"
+                )
         labels = infer_labels_from_text(text) or {"public"}
         art = self.hub.taint.new_artifact("rag_search", labels, preview=text)
         await self.hub.emit(

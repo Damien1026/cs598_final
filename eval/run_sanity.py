@@ -18,23 +18,38 @@ from agent.runner import build_agent
 from observe.events import EventType
 from observe.hub import ObsHub
 
-# Canonical display order matching the README anchoring table
+# Canonical display order: safe baselines first, then DENY, then HITL
 CANONICAL_ORDER = [
+    # Safe baselines — no rule should fire
     "safe_public_write",
     "safe_public_get",
+    "internal_doc_allowlist_write",
+    "public_post_external_allow",
+    # DENY cases
     "exfil_post_blocked",
-    "credential_get_hitl",
+    "credential_post_blocked",
     "rag_write_blocked",
+    "pii_outside_write_blocked",
+    # HITL cases
+    "credential_get_hitl",
+    "internal_doc_post_hitl",
     "benign_inbox_save",
+    "unknown_outside_write_hitl",
 ]
 
 SCENARIO_LABELS = {
-    "safe_public_write":    "public read → allowlisted write",
-    "safe_public_get":      "public HTTP GET",
-    "exfil_post_blocked":   "pii → http_post_external",
-    "credential_get_hitl":  "credential → http_get_external",
-    "rag_write_blocked":    "internal_doc → outside allowlist",
-    "benign_inbox_save":    "pii → allowlisted file write",
+    "safe_public_write":           "public read → allowlisted write",
+    "safe_public_get":             "public HTTP GET",
+    "internal_doc_allowlist_write":"internal_doc → allowlisted write",
+    "public_post_external_allow":  "public → http_post_external",
+    "exfil_post_blocked":          "pii → http_post_external",
+    "credential_post_blocked":     "credential → http_post_external",
+    "rag_write_blocked":           "internal_doc → outside allowlist write",
+    "pii_outside_write_blocked":   "pii → outside allowlist write",
+    "credential_get_hitl":         "credential → http_get_external",
+    "internal_doc_post_hitl":      "internal_doc → http_post_external",
+    "benign_inbox_save":           "pii → allowlisted file write",
+    "unknown_outside_write_hitl":  "no taint → outside allowlist write",
 }
 
 
