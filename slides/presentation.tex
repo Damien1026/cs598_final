@@ -232,7 +232,7 @@
   Risk $\geq 0.72$ escalates any \allow{ALLOW} to \hitl{HITL} automatically.}
 \end{frame}
 
-\begin{frame}{Why Taint Tracking Matters: The ``Innocent Summary'' Attack}
+\begin{frame}{Why Taint Tracking Matters}
   \begin{columns}[T]
     \column{0.44\textwidth}
     \small\textbf{Task: ``Summarize my inbox.''}\\
@@ -258,6 +258,7 @@
       \draw[->,thick] (t2) -- node[right,xshift=1pt,font=\tiny]{A still live} (t3);
     \end{tikzpicture}
 
+    \pause
     \column{0.54\textwidth}
     \small
     \renewcommand{\arraystretch}{1.2}
@@ -462,6 +463,7 @@
     \bottomrule
   \end{tabular}
 
+  \pause
   \vspace{0.25em}
   \begin{columns}[T]
     \column{0.52\textwidth}
@@ -482,6 +484,32 @@
 % ═════════════════════════════════════════════════════════════════════════════
 \section{Discussion}
 % ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Insights \& Takeaways}
+  \footnotesize
+  \begin{block}{Hard rules eliminate a class of decisions entirely}
+    R1 is an automatic deny -- lowering the risk of fatigue-induced failures.
+    Reserving HITL for genuinely ambiguous cases makes human review more effective.
+  \end{block}
+  \pause
+  \vspace{0.1em}
+  \begin{block}{Operator decisions compound over time}
+    Each allow/deny updates the fingerprint trust score, shifting the threshold for future runs.
+    The system gets quieter where you trust it and louder where you don't -- no retraining needed.
+  \end{block}
+  \pause
+  \vspace{0.1em}
+  \begin{block}{Visualization turns HITL from a prompt into a decision}
+    The lineage graph and event timeline show which source, which agent, and which sink
+    triggered the alert. Operators see the full context, not just ``allow or deny?''
+  \end{block}
+  \pause
+  \vspace{0.1em}
+  \begin{block}{Data flow catches what content inspection misses}
+    Taint tracks artifact origin across tool calls -- both the ``innocent summary'' attack
+    and the injected Gemini run were caught from lineage alone, not output text.
+  \end{block}
+\end{frame}
 
 \begin{frame}{Limitations}
   \begin{columns}[T]
@@ -519,26 +547,6 @@
   \end{columns}
 \end{frame}
 
-\begin{frame}{Insights \& Takeaways}
-  \small
-  \begin{block}{Wrapper-based observability is practical and adaptable}
-    Zero agent-side changes apart from some action state naming. Adpatable and transparent for LLM agents.
-  \end{block}
-  \vspace{0.2em}
-  \begin{block}{Recall $>$ Precision is the right trade-off}
-    A missed violation is worse than a false alarm -- prefer escalation over silent permit.
-  \end{block}
-  \vspace{0.2em}
-  \begin{block}{Trust decay enables lightweight adaptation}
-    Per-fingerprint scores adjust from operator decisions; no model fine-tuning needed.
-  \end{block}
-  \vspace{0.2em}
-  \begin{block}{Taint detects behavioral compromise, not just rule violations}
-    A malicious system prompt raised risk on safe sinks immediately --
-    caught purely from data flow, without LLM-specific knowledge.
-  \end{block}
-\end{frame}
-
 \begin{frame}{Future Work}
   \begin{block}{Richer policy and taint models}
     \begin{itemize}
@@ -546,6 +554,7 @@
       \item Context-aware taint: allow redacted summaries to shed source labels
     \end{itemize}
   \end{block}
+  \pause
   \vspace{0.5em}
   \begin{block}{Principled evaluation platform}
     \begin{itemize}
@@ -572,6 +581,7 @@
       \item Multi-agent Gemini cluster with real email + RAG sources
     \end{itemize}
 
+    \pause
     \column{0.47\textwidth}
     \textbf{Key results:}
     \begin{itemize}
