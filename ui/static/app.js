@@ -178,7 +178,7 @@ async function renderLineage() {
     .map((e) => ({ source: idToIndex[e.from], target: idToIndex[e.to], rel: e.rel }));
 
   // Color helpers
-  const kindColor = { source: "#3d8bfd", tool: "#d4a017", sink: "#3fb950" };
+  const kindColor = { source: "#3d8bfd", tool: "#d4a017", sink: "#3fb950", sink_blocked: "#f85149" };
   const labelBorder = { credential: "#a855f7", pii: "#f0883e", internal_doc: "#e3b341", public: "none" };
 
   function nodeColor(n) {

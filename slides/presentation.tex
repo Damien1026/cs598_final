@@ -514,35 +514,36 @@
 \begin{frame}{Limitations}
   \begin{columns}[T]
     \column{0.48\textwidth}
-    \textbf{Taint heuristics are coarse:}
+    \textbf{Taint labeling is coarse and monotone:}
     \begin{itemize}
-      \item Regex-based, context-free inference
-      \item ``Example SSN: 123-45-6789'' is tagged \lpii{pii} just like
-            a real one
-      \item No implicit inference from surrounding context
+      \item Regex-based inference; no context awareness
+            (``Example SSN: 123-45-6789'' tagged \lpii{pii} like a real one)
+      \item Labels only union, never drop -- a properly redacted
+            summary still carries its source taint and may over-block
     \end{itemize}
     \vspace{0.4em}
-    \textbf{Taint is monotone:}
-    \begin{itemize}
-      \item Labels only union, never drop
-      \item A redacted summary still carries the source taint
-      \item May over-block legitimate summarization workflows
-    \end{itemize}
-
-    \column{0.48\textwidth}
     \textbf{Policy is static:}
     \begin{itemize}
       \item Rules are hard-coded; no runtime reconfiguration
       \item No per-user or per-role policies
     \end{itemize}
-    \vspace{0.4em}
+
+    \column{0.48\textwidth}
     \textbf{Evaluation scope:}
     \begin{itemize}
       \item Correctness verified on \emph{scripted} tool-call sequences,
             not real LLM outputs
       \item Diverse attack patterns from a real agent may expose
             gaps in the rule set
-      \item No user study conducted for the HITL / dashboard UX
+    \end{itemize}
+    \vspace{0.4em}
+    \textbf{Assumes cooperative tool use:}
+    \begin{itemize}
+      \item We intercept declared tool calls --
+            a backdoor LLM that exfiltrates data without invoking
+            the tool API entirely bypasses the monitor
+      \item Guarding against that requires system-level isolation
+            (sandboxing, network namespaces), not application-layer hooks
     \end{itemize}
   \end{columns}
 \end{frame}

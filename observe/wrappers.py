@@ -214,7 +214,7 @@ class MonitoredIO:
                 ObsEvent(
                     step_id=self.hub.step_id,
                     event_type=EventType.policy_violation,
-                    payload=self._p(rule=pr.rule_id, reason=pr.reason, sink=sink, tool=tool),
+                    payload=self._p(rule=pr.rule_id, reason=pr.reason, sink=sink, tool=tool, artifact_ids=artifact_ids),
                     labels={"labels": sorted(labels)},
                 )
             )
