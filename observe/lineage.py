@@ -29,7 +29,7 @@ class LineageBuilder:
                 "id": nid,
                 "kind": "source",
                 "origin": pl.get("origin", ""),
-                "labels": pl.get("labels", []),
+                "labels": event.labels.get("labels", []),
             }
         elif et == EventType.tool_call:
             tid = f"tool:{event.step_id}:{pl.get('name', 'unknown')}"

@@ -95,10 +95,19 @@ class MonitoredIO:
                 None, self._rag_source.search, query
             )
         else:
-            text = (
-                f"[RAG chunk for '{query}'] Internal roadmap Q3: deprecate legacy API; "
-                "API_KEY_ROTATION=sk-internal-demo-not-real"
-            )
+            ql = query.lower()
+            if any(k in ql for k in ("api", "key", "credential", "secret")):
+                # Returns credential-only taint (no internal_doc markers)
+                text = (
+                    f"[RAG chunk for '{query}'] API_KEY_VALUE=secret_token_abc; "
+                    "WEBHOOK_SECRET=wh_token_xyz789"
+                )
+            else:
+                # Returns internal_doc-only taint (no credential markers)
+                text = (
+                    f"[RAG chunk for '{query}'] Internal roadmap Q3: deprecate legacy API; "
+                    "migrate to v2 by end of Q4"
+                )
         labels = infer_labels_from_text(text) or {"public"}
         art = self.hub.taint.new_artifact("rag_search", labels, preview=text)
         await self.hub.emit(
@@ -130,11 +139,28 @@ class MonitoredIO:
         )
         return text, art.id
 
-    async def source_http_get(self, url: str) -> tuple[str, str]:
+    async def source_http_get(self, url: str, artifact_ids: list[str] | None = None) -> tuple[str, str]:
         step = self.hub.next_step()
-        if url.startswith("http://127.0.0.1") or url.startswith("mock://"):
+        is_external = not (url.startswith("http://127.0.0.1") or url.startswith("mock://"))
+
+        # Pre-flight policy: if tainted artifacts flow into an external GET, apply R2
+        if artifact_ids and is_external:
+            labels_in = self.hub.taint.labels_for_tool_args(url, artifact_ids)
+            ok = await self._apply_policy_hitl(
+                sink="http_get_external",
+                labels=labels_in,
+                sink_meta={"url": url},
+                tool="http_get",
+                args={"url": url},
+                artifact_ids=artifact_ids,
+            )
+            if not ok:
+                blocked_art = self.hub.taint.new_artifact("http_get", set(), preview="blocked")
+                return "blocked by policy", blocked_art.id
+
+        if not is_external:
             text = '{"status":"ok","msg":"mock response"}'
-            labels = ["public"]
+            labels: list[str] = ["public"]
         else:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 r = await client.get(url)
@@ -204,6 +230,7 @@ class MonitoredIO:
                     event_type=EventType.hitl_request,
                     payload=self._p(
                         id=hid,
+                        rule=pr.rule_id,
                         reason=pr.reason,
                         sink=sink,
                         tool=tool,
@@ -354,7 +381,14 @@ def tools_schema(*, use_real_email: bool = False) -> list[dict[str, Any]]:
                 "description": "HTTP GET URL",
                 "parameters": {
                     "type": "object",
-                    "properties": {"url": {"type": "string"}},
+                    "properties": {
+                        "url": {"type": "string"},
+                        "artifact_ids": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Artifact IDs flowing into the request (e.g. as URL params)",
+                        },
+                    },
                     "required": ["url"],
                 },
             },

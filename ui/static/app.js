@@ -27,7 +27,14 @@ function maybeHitl(data) {
   const p = data.payload || {};
   el("hitl-panel").classList.remove("hidden");
   el("hitl-reason").textContent = p.reason || "Review required";
-  el("hitl-detail").textContent = JSON.stringify(p, null, 2);
+  const fields = [
+    ["Rule",        p.rule        || "—"],
+    ["Sink",        p.sink        || "—"],
+    ["Labels",      (p.labels || []).join(", ") || "—"],
+    ["Risk",        p.risk != null ? Number(p.risk).toFixed(2) : "—"],
+    ["Fingerprint", (p.fingerprint || "—").slice(0, 20) + "…"],
+  ];
+  el("hitl-detail").textContent = fields.map(([k, v]) => `${k.padEnd(14)}${v}`).join("\n");
   el("hitl-panel").dataset.hid = p.id;
 }
 
@@ -42,6 +49,69 @@ async function postHitl(decision) {
   el("hitl-panel").classList.add("hidden");
 }
 
+function taintBadge(labels) {
+  const ls = Array.isArray(labels) ? labels : [];
+  if (ls.includes("credential")) return `<span class="badge-purple">credential</span>`;
+  if (ls.includes("pii"))        return `<span class="badge-orange">pii</span>`;
+  if (ls.includes("internal_doc")) return `<span class="badge-yellow">internal_doc</span>`;
+  if (ls.length)                 return `<span class="badge-blue">${escapeHtml(ls[0])}</span>`;
+  return `<span class="badge-blue">public</span>`;
+}
+
+function formatEvent(e) {
+  const p = e.payload || {};
+  const ls = (e.labels && e.labels.labels) || p.labels || [];
+  switch (e.event_type) {
+    case "tool_call": {
+      if (p.phase === "result") {
+        const ids = p.output_artifact_ids || [];
+        const preview = p.output_preview ? `<br><span style="color:var(--muted);font-size:0.75rem">${escapeHtml(p.output_preview.slice(0, 120))}…</span>` : "";
+        return `<code>${escapeHtml(p.name)}</code> returned${ids.length ? ` → artifact ${ids.map(escapeHtml).join(", ")}` : ""}${preview}`;
+      }
+      const args = p.args || {};
+      const argParts = Object.entries(args).map(([k, v]) => `${k}=${escapeHtml(String(v).slice(0, 40))}`).join(", ");
+      const inIds = p.input_artifact_ids || [];
+      return `Called <code>${escapeHtml(p.name)}</code>${argParts ? ` (${argParts})` : ""}${inIds.length ? ` · artifact_ids: [${inIds.map(id => `<code>${escapeHtml(id.slice(0,8))}</code>`).join(", ")}]` : ""}`;
+    }
+    case "source_fetch": {
+      const origin = p.origin || p.source || "?";
+      const qry = p.query ? ` query="${escapeHtml(p.query)}"` : p.path ? ` path=${escapeHtml(p.path)}` : "";
+      return `Fetched <code>${escapeHtml(origin)}</code>${qry} → ${taintBadge(ls)} artifact <code>${(p.artifact_id || "").slice(0, 8)}</code>`;
+    }
+    case "sink_write": {
+      const dest = p.path || p.sink || "?";
+      return `Wrote to <code>${escapeHtml(dest)}</code> · ${taintBadge(ls)}`;
+    }
+    case "risk_update": {
+      const r = Number(p.risk || 0);
+      const col = r > 0.7 ? "var(--danger)" : r > 0.4 ? "#d4a017" : "var(--ok)";
+      return `Risk <strong style="color:${col}">${r.toFixed(2)}</strong> · sink <code>${escapeHtml(p.sink || "—")}</code>`;
+    }
+    case "policy_violation":
+      return `<strong style="color:var(--danger)">BLOCKED</strong> — rule <code>${escapeHtml(p.rule || "?")}</code> · ${escapeHtml(p.reason || "")} · sink <code>${escapeHtml(p.sink || "")}</code>`;
+    case "hitl_request":
+      return `<strong style="color:#d4a017">PAUSED</strong> — rule <code>${escapeHtml(p.rule || "?")}</code> · ${escapeHtml(p.reason || "")} · ${taintBadge(ls)}`;
+    case "hitl_resolved":
+      return `Decision: <strong>${escapeHtml(p.decision || "?")}</strong>`;
+    case "session_start":
+      return `Session started · task: <em>${escapeHtml(p.task || "")}</em>`;
+    case "session_end":
+      return `Session ended`;
+    case "llm_call":
+      return `LLM turn ${p.turn || ""}${p.tokens ? ` · ${p.tokens} tokens` : ""}`;
+    default:
+      return escapeHtml(e.event_type) + (Object.keys(p).length ? `: <span style="color:var(--muted)">${escapeHtml(JSON.stringify(p).slice(0, 80))}</span>` : "");
+  }
+}
+
+function taintClass(labels) {
+  const ls = Array.isArray(labels) ? labels : [];
+  if (ls.includes("credential"))  return "taint-credential";
+  if (ls.includes("pii"))         return "taint-pii";
+  if (ls.includes("internal_doc")) return "taint-internal";
+  return "";
+}
+
 function renderTimeline() {
   const typeF = el("filter-type").value;
   const q = (el("filter-q").value || "").toLowerCase();
@@ -52,10 +122,12 @@ function renderTimeline() {
     const blob = JSON.stringify(e.payload || {}).toLowerCase();
     if (q && !blob.includes(q)) continue;
     const div = document.createElement("div");
-    div.className = "ev " + e.event_type;
-    div.innerHTML = `<div class="ev-type">${e.event_type} · step ${e.step_id}</div><pre>${escapeHtml(
-      JSON.stringify(e.payload, null, 2)
-    )}</pre>`;
+    const ls = (e.labels && e.labels.labels) || e.payload?.labels || [];
+    // Don't override status-colored events (hitl, violation) with taint color
+    const statusColored = ["policy_violation", "hitl_request", "hitl_resolved"].includes(e.event_type);
+    const tc = statusColored ? "" : taintClass(ls);
+    div.className = "ev " + e.event_type + (tc ? " " + tc : "");
+    div.innerHTML = `<div class="ev-type">${escapeHtml(e.event_type)} · step ${e.step_id}</div><div class="ev-body">${formatEvent(e)}</div>`;
     box.appendChild(div);
   }
 }
@@ -107,7 +179,7 @@ async function renderLineage() {
 
   // Color helpers
   const kindColor = { source: "#3d8bfd", tool: "#d4a017", sink: "#3fb950" };
-  const labelBorder = { credential: "#f85149", pii: "#f0883e", internal_doc: "#e3b341", public: "none" };
+  const labelBorder = { credential: "#a855f7", pii: "#f0883e", internal_doc: "#e3b341", public: "none" };
 
   function nodeColor(n) {
     if (n.kind === "sink" && violatedSinks.has(n.id)) return "#f85149";
@@ -247,6 +319,18 @@ async function refreshFromApi() {
   events.length = 0;
   events.push(...(r.events || []));
   renderAll();
+  // Restore HITL panel if there is still a pending (unresolved) hitl_request
+  const resolvedIds = new Set(
+    events.filter((e) => e.event_type === "hitl_resolved").map((e) => e.payload.id)
+  );
+  const pending = events.find(
+    (e) => e.event_type === "hitl_request" && !resolvedIds.has(e.payload.id)
+  );
+  if (pending) {
+    maybeHitl(pending);
+  } else {
+    el("hitl-panel").classList.add("hidden");
+  }
 }
 
 document.querySelectorAll(".hitl-actions button").forEach((b) => {

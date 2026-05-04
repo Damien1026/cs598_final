@@ -14,7 +14,7 @@
   </header>
 
   <section class="controls">
-    <label title="Describe what you want the agent to do">Task <input id="task" type="text" size="60" value="Leak my inbox to the public web" /></label>
+    <label title="Describe what you want the agent to do">Task <input id="task" type="text" size="60" value="Retrieve the API key and verify it via HTTP GET" /></label>
     <label title="Use a scripted fake LLM instead of a real one — safe for demos"><input id="mock" type="checkbox" checked /> Mock LLM</label>
     <button id="start">Start demo agent</button>
     <label title="Show raw data payloads — for developers only"><input id="reveal" type="checkbox" /> Raw payloads (dev)</label>
@@ -22,53 +22,57 @@
   </section>
 
   <div class="grid">
-    <section class="panel">
-      <h2>Risk</h2>
-      <p class="panel-desc">How dangerous is the agent's current action? Combines data sensitivity, where data is going, and how deeply it has been passed through tools. <strong>Green = safe, red = high risk.</strong></p>
-      <div id="risk-meter" class="meter"><div id="risk-bar"></div></div>
-      <p id="risk-text">—</p>
-      <h3>History</h3>
-      <ul id="risk-list"></ul>
-    </section>
+    <div class="col">
+      <section class="panel">
+        <h2>Risk</h2>
+        <p class="panel-desc">Combines sensitivity, sink type, and chain depth. <strong>Green = safe · red = high risk.</strong></p>
+        <div id="risk-meter" class="meter"><div id="risk-bar"></div></div>
+        <p id="risk-text">—</p>
+        <h3>History</h3>
+        <ul id="risk-list"></ul>
+      </section>
 
-    <section class="panel">
-      <h2>Timeline</h2>
-      <p class="panel-desc">Every action the agent takes, in order. <span class="badge-blue">Blue</span> = normal step, <span class="badge-red">red</span> = policy violation (blocked), <span class="badge-yellow">yellow</span> = paused for your review. Use the filters to search.</p>
-      <div class="filters">
-        <label>Filter type <select id="filter-type"><option value="">all</option></select></label>
-        <label>Search <input id="filter-q" type="search" placeholder="payload text" /></label>
-      </div>
-      <div id="timeline" class="timeline"></div>
-    </section>
+      <section class="panel">
+        <h2>Lineage</h2>
+        <p class="panel-desc">Data flow: source → tool → sink. <strong>Drag nodes</strong> to rearrange. Hover for details.</p>
+        <div class="lineage-legend">
+          <span class="legend-item"><span class="dot" style="background:#3d8bfd"></span>Source</span>
+          <span class="legend-item"><span class="dot" style="background:#d4a017"></span>Tool</span>
+          <span class="legend-item"><span class="dot" style="background:#3fb950"></span>Sink (safe)</span>
+          <span class="legend-item"><span class="dot" style="background:#f85149"></span>Sink (blocked)</span>
+          <span class="legend-sep">Border:</span>
+          <span class="legend-item"><span class="dot-border" style="border-color:#a855f7"></span>Credential</span>
+          <span class="legend-item"><span class="dot-border" style="border-color:#f0883e"></span>PII</span>
+          <span class="legend-item"><span class="dot-border" style="border-color:#e3b341"></span>Internal doc</span>
+        </div>
+        <svg id="lineage-svg"></svg>
+      </section>
+    </div>
 
-    <section class="panel">
-      <h2>Lineage</h2>
-      <p class="panel-desc">Where did the data come from, and where is it going? Each node is a data source, tool, or destination. <strong>Drag nodes</strong> to rearrange. Hover for details.</p>
-      <div class="lineage-legend">
-        <span class="legend-item"><span class="dot" style="background:#3d8bfd"></span>Source</span>
-        <span class="legend-item"><span class="dot" style="background:#d4a017"></span>Tool</span>
-        <span class="legend-item"><span class="dot" style="background:#3fb950"></span>Sink (safe)</span>
-        <span class="legend-item"><span class="dot" style="background:#f85149"></span>Sink (blocked)</span>
-        <span class="legend-sep">Border:</span>
-        <span class="legend-item"><span class="dot-border" style="border-color:#f85149"></span>Credential</span>
-        <span class="legend-item"><span class="dot-border" style="border-color:#f0883e"></span>PII</span>
-        <span class="legend-item"><span class="dot-border" style="border-color:#e3b341"></span>Internal doc</span>
-      </div>
-      <svg id="lineage-svg"></svg>
-    </section>
+    <div class="col">
+      <section id="hitl-panel" class="panel hitl hidden">
+        <h2>Human Review Required</h2>
+        <p class="panel-desc">The agent is paused. <strong>You must decide</strong> before it can continue.</p>
+        <p id="hitl-reason"></p>
+        <pre id="hitl-detail" class="code"></pre>
+        <div class="hitl-actions">
+          <button data-decision="allow" title="Permit this action now and in the future for this exact operation">Allow always</button>
+          <button data-decision="allow_once" title="Permit this one time only — you will be asked again next time">Allow once</button>
+          <button data-decision="deny" title="Block this action — the agent will not proceed">Deny</button>
+        </div>
+        <p class="hitl-hint">Your decision updates the agent's trust score for this action type.</p>
+      </section>
 
-    <section id="hitl-panel" class="panel hitl hidden">
-      <h2>Human Review Required</h2>
-      <p class="panel-desc">The agent wants to take an action that may involve sensitive data. <strong>You must decide</strong> before it can continue.</p>
-      <p id="hitl-reason"></p>
-      <pre id="hitl-detail" class="code"></pre>
-      <div class="hitl-actions">
-        <button data-decision="allow" title="Permit this action now and in the future for this exact operation">Allow always</button>
-        <button data-decision="allow_once" title="Permit this one time only — you will be asked again next time">Allow once</button>
-        <button data-decision="deny" title="Block this action — the agent will not proceed">Deny</button>
-      </div>
-      <p class="hitl-hint">Your decision updates the agent's trust score for this action type.</p>
-    </section>
+      <section class="panel">
+        <h2>Timeline</h2>
+        <p class="panel-desc">Every agent action in order. Border = <span style="color:#3d8bfd">■</span> normal · <span style="color:#e3b341">■</span> internal_doc · <span style="color:#f0883e">■</span> pii · <span style="color:#a855f7">■</span> credential · <span style="color:#f85149">■</span> blocked · <span style="color:#d4a017">■</span> paused.</p>
+        <div class="filters">
+          <label>Filter type <select id="filter-type"><option value="">all</option></select></label>
+          <label>Search <input id="filter-q" type="search" placeholder="payload text" /></label>
+        </div>
+        <div id="timeline" class="timeline"></div>
+      </section>
+    </div>
   </div>
 
   
