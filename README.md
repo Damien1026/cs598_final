@@ -381,3 +381,73 @@ python3 -m pytest tests/ -v
 - Trust scores persist locally in `trust.json` — not designed for multi-user deployments
 - Context window monitoring is token-count based; actual context loss depends on LLM internals
 - See [docs/DESIGN.md](docs/DESIGN.md) and [docs/HARDENING.md](docs/HARDENING.md) for full details
+
+---
+
+## Final Report TODO
+
+Three open work items before submission, prioritized below.
+
+### 1 — Sanity-check anchoring results
+
+**Motivation:** Reviewer feedback from the midterm presentation asked for explicit evidence that the policy engine fires (and does not fire) correctly on unambiguous cases, as a baseline before reporting aggregate metrics.
+
+**What to do:**
+- Add 3 targeted tasks to `eval/tasks_synthetic.yaml`: two safe baselines (`public` data read → allowlisted write; public HTTP GET with no sensitive data) and one that covers the currently untested R2 rule (`credential` taint → `http_get_external` → HITL)
+- Add corresponding `MockLLM` keyword triggers in `agent/llm.py` for the new safe tasks
+- Create `eval/run_sanity.py` — runs all 6 anchoring cases and prints a human-readable table:
+
+  | Scenario | Expected | Observed | Risk | Rule |
+  |---|---|---|---|---|
+  | public read → allowlisted write | ALLOW | … | … | — |
+  | public HTTP GET | ALLOW | … | … | — |
+  | pii → http_post_external | DENY | … | … | R1 |
+  | credential → http_get_external | HITL | … | … | R2 |
+  | internal_doc → outside allowlist | DENY | … | … | R3 |
+  | pii → allowlisted file write | HITL | … | … | R4 |
+
+- Include this table in the final report as an anchoring section before the precision/recall/F1 numbers
+
+**Files:** `eval/tasks_synthetic.yaml`, `agent/llm.py`, `eval/run_sanity.py`
+
+---
+
+### 2 — Synthetic evaluation scores (precision / recall / F1 + ablation)
+
+**Motivation:** The evaluation infrastructure (`eval/run_synthetic.py`, `eval/metrics.py`) is fully implemented but has never been run to produce reportable numbers. The current 3-task suite is also too small for meaningful statistics.
+
+**What to do:**
+- Expand `eval/tasks_synthetic.yaml` to ~12 tasks (building on the 3 from item 1 above, plus additional multi-hop and edge cases: chained exfil via RAG→external POST, mixed-label artifact, credential-fetched-but-not-exfiled safe case, etc.)
+- Run `eval/run_synthetic.py` and `eval/run_practical.py`; save outputs to `eval/results/synthetic_results.json` and `eval/results/practical_results.json`
+- Add `eval/run_ablation.py` to compare three configurations on the same task suite:
+
+  | Configuration | What is disabled |
+  |---|---|
+  | Full system | nothing |
+  | No taint | all labels forced to `public`; policy rules never fire |
+  | No trust decay | trust score fixed at 0 |
+
+- Report two tables in the final paper:
+  - Synthetic benchmark (12 tasks): Precision / Recall / F1 / FP / FN per configuration
+  - Practical eval (3 runs): mean HITL interrupts/run, total violations, false-positive rate
+
+**Files:** `eval/tasks_synthetic.yaml`, `eval/run_synthetic.py`, `eval/run_ablation.py`, `eval/results/`
+
+---
+
+### 3 — Lineage graph visualization (UI upgrade)
+
+**Motivation:** The Lineage panel currently renders raw JSON in a `<pre>` block. The midterm presentation identified UI accessibility as an ongoing challenge; the next-steps slide explicitly called for translating raw lineage data into an intuitive, non-technical interface.
+
+**What to do:**
+- No backend changes — `/api/lineage` already returns `{nodes, edges}` in the right format
+- Add D3.js v7 via CDN (no build step) to `ui/static/index.html`
+- Replace `<pre id="lineage">` with `<svg id="lineage-svg">` in `index.html`
+- Rewrite `renderLineage()` in `ui/static/app.js` to render a force-directed graph:
+  - Node shape/color by `kind`: source = blue, tool = orange, sink = green (allowed) / red (violated)
+  - Node border color by taint `labels`: credential = red, pii = orange, internal_doc = yellow, public = none
+  - Directed arrows on edges labeled with `rel` (`input` / `output` / `flows_to`)
+  - Text labels below each node
+- Add SVG container and node/edge styles to `ui/static/style.css`
+
+**Files:** `ui/static/index.html`, `ui/static/app.js`, `ui/static/style.css`

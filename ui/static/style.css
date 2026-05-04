@@ -29,6 +29,69 @@ header h1 {
 .sub {
   color: var(--muted);
   margin: 0 0 1rem;
+  max-width: 72ch;
+  font-size: 0.9rem;
+}
+
+.panel-desc {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: -0.35rem 0 0.75rem;
+  line-height: 1.5;
+}
+
+.panel-desc strong {
+  color: var(--text);
+}
+
+.badge-blue  { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: var(--accent); color: #fff; font-size: 0.75rem; }
+.badge-red   { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: var(--danger); color: #fff; font-size: 0.75rem; }
+.badge-yellow{ display: inline-block; padding: 0 0.3em; border-radius: 3px; background: #d4a017;        color: #fff; font-size: 0.75rem; }
+
+.lineage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.85rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  align-items: center;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.legend-sep {
+  color: var(--muted);
+  opacity: 0.5;
+  margin-left: 0.25rem;
+}
+
+.dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-border {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2.5px solid;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.hitl-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 0.5rem 0 0;
 }
 
 .controls {
@@ -56,13 +119,17 @@ button:hover {
 .grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: 280px 1fr;
+  /* grid-template-columns: 280px 1fr; */
+  /* grid-template-columns: repeat(2, 1fr); */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .panel {
+  /* width: 600px; */
   background: var(--panel);
   border-radius: 10px;
   padding: 1rem 1.1rem;
+  min-width: 0; 
 }
 
 .panel.wide {
@@ -160,4 +227,24 @@ ul {
   margin: 0.25rem 0;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+#lineage-svg {
+  width: 100%;
+  min-height: 280px;
+  display: block;
+  background: #0d1117;
+  border-radius: 8px;
+}
+
+#lineage-svg circle {
+  cursor: grab;
+}
+
+#lineage-svg circle:active {
+  cursor: grabbing;
+}
+
+#lineage-svg circle:hover {
+  filter: brightness(1.25);
 }

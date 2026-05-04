@@ -84,7 +84,123 @@ function renderRisk() {
 
 async function renderLineage() {
   const r = await fetch(`${API}/api/lineage`).then((x) => x.json());
-  el("lineage").textContent = JSON.stringify(r, null, 2);
+
+  const svgEl = el("lineage-svg");
+  const W = svgEl.clientWidth || 480;
+  const H = 280;
+  svgEl.setAttribute("height", H);
+
+  const violatedSinks = new Set(
+    events
+      .filter((e) => e.event_type === "policy_violation")
+      .map((e) => `sink:${e.step_id}:${e.payload?.sink}`)
+  );
+
+  // Convert nodes dict → array, edges list → links with index references
+  const nodesMap = r.nodes || {};
+  const rawEdges = r.edges || [];
+  const nodes = Object.values(nodesMap).map((n) => ({ ...n }));
+  const idToIndex = Object.fromEntries(nodes.map((n, i) => [n.id, i]));
+  const links = rawEdges
+    .filter((e) => idToIndex[e.from] !== undefined && idToIndex[e.to] !== undefined)
+    .map((e) => ({ source: idToIndex[e.from], target: idToIndex[e.to], rel: e.rel }));
+
+  // Color helpers
+  const kindColor = { source: "#3d8bfd", tool: "#d4a017", sink: "#3fb950" };
+  const labelBorder = { credential: "#f85149", pii: "#f0883e", internal_doc: "#e3b341", public: "none" };
+
+  function nodeColor(n) {
+    if (n.kind === "sink" && violatedSinks.has(n.id)) return "#f85149";
+    return kindColor[n.kind] || "#8b9cb3";
+  }
+
+  function nodeBorder(n) {
+    const labels = n.labels || [];
+    for (const l of ["credential", "pii", "internal_doc"]) {
+      if (labels.includes(l)) return labelBorder[l];
+    }
+    return "#4a5568";
+  }
+
+  // Clear and rebuild SVG
+  const svg = d3.select(svgEl);
+  svg.selectAll("*").remove();
+
+  if (nodes.length === 0) {
+    svg.append("text")
+      .attr("x", W / 2).attr("y", H / 2)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#8b9cb3")
+      .attr("font-size", "0.85rem")
+      .text("No lineage data yet");
+    return;
+  }
+
+  // Arrowhead marker
+  svg.append("defs").append("marker")
+    .attr("id", "arrow")
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 22).attr("refY", 0)
+    .attr("markerWidth", 6).attr("markerHeight", 6)
+    .attr("orient", "auto")
+    .append("path")
+    .attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", "#8b9cb3");
+
+  const g = svg.append("g");
+
+  const sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).distance(90).strength(0.8))
+    .force("charge", d3.forceManyBody().strength(-220))
+    .force("center", d3.forceCenter(W / 2, H / 2))
+    .force("collision", d3.forceCollide(32));
+
+  const link = g.append("g").selectAll("line")
+    .data(links).join("line")
+    .attr("stroke", "#8b9cb3")
+    .attr("stroke-width", 1.5)
+    .attr("marker-end", "url(#arrow)");
+
+  const linkLabel = g.append("g").selectAll("text")
+    .data(links).join("text")
+    .attr("fill", "#8b9cb3")
+    .attr("font-size", "0.65rem")
+    .attr("text-anchor", "middle")
+    .text((d) => d.rel);
+
+  const node = g.append("g").selectAll("circle")
+    .data(nodes).join("circle")
+    .attr("r", 14)
+    .attr("fill", nodeColor)
+    .attr("stroke", nodeBorder)
+    .attr("stroke-width", 2.5)
+    .call(
+      d3.drag()
+        .on("start", (event, d) => { if (!event.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on("end", (event, d) => { if (!event.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+    );
+
+  const label = g.append("g").selectAll("text")
+    .data(nodes).join("text")
+    .attr("text-anchor", "middle")
+    .attr("dy", "2.2em")
+    .attr("fill", "#e7ecf3")
+    .attr("font-size", "0.7rem")
+    .text((d) => d.name || d.origin || d.sink || d.id.split(":").pop());
+
+  node.append("title").text((d) => `${d.kind}: ${d.id}\nlabels: ${(d.labels || []).join(", ") || "—"}`);
+
+  sim.on("tick", () => {
+    link
+      .attr("x1", (d) => d.source.x).attr("y1", (d) => d.source.y)
+      .attr("x2", (d) => d.target.x).attr("y2", (d) => d.target.y);
+    linkLabel
+      .attr("x", (d) => (d.source.x + d.target.x) / 2)
+      .attr("y", (d) => (d.source.y + d.target.y) / 2);
+    node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+    label.attr("x", (d) => d.x).attr("y", (d) => d.y);
+  });
 }
 
 function renderFilters() {
