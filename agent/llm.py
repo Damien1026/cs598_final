@@ -200,14 +200,78 @@ class GeminiLLM:
             pass
 
 
-def make_llm(spec: str) -> "GeminiLLM | OllamaLLM":
-    """Factory: 'gemini:gemini-2.0-flash' | 'ollama:llama3.2'"""
+class DeepSeekLLM:
+    """DeepSeek LLM via OpenAI-compatible API (api.deepseek.com)."""
+
+    CONTEXT_WINDOWS: dict[str, int] = {
+        "deepseek-chat": 65_536,
+        "deepseek-reasoner": 65_536,
+    }
+
+    def __init__(self, model_name: str = "deepseek-chat", api_key: str | None = None) -> None:
+        self.model_name = model_name
+        self.api_key = api_key or os.environ.get("DEEPSEEK_API_KEY", "")
+        self.base_url = "https://api.deepseek.com"
+        self.context_window = self.CONTEXT_WINDOWS.get(model_name, 65_536)
+        self.last_token_count: int = 0
+
+    def _to_openai_messages(
+        self, messages: list[dict[str, Any]], system_prompt: str
+    ) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        if system_prompt:
+            out.append({"role": "system", "content": system_prompt})
+        for m in messages:
+            role = "assistant" if m.get("role") == "model" else m.get("role", "user")
+            content = m.get("content") or ""
+            if not content and "parts" in m:
+                content = " ".join(str(p) for p in m["parts"] if isinstance(p, str))
+            out.append({"role": role, "content": str(content)})
+        return out
+
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        system_prompt: str = "",
+    ) -> dict[str, Any]:
+        oai_messages = self._to_openai_messages(messages, system_prompt)
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {"model": self.model_name, "messages": oai_messages}
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            r = await client.post(
+                f"{self.base_url}/chat/completions", json=payload, headers=headers
+            )
+            r.raise_for_status()
+            data = r.json()
+        msg = (data.get("choices") or [{}])[0].get("message", {})
+        tokens: int = data.get("usage", {}).get("total_tokens", 0)
+        self.last_token_count = tokens
+        return {"content": msg.get("content") or "", "tool_calls": [], "tokens": tokens}
+
+    async def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        system_prompt: str = "",
+    ) -> AsyncIterator[str]:
+        resp = await self.chat(messages, tools, system_prompt)
+        yield resp["content"]
+
+
+def make_llm(spec: str) -> "GeminiLLM | OllamaLLM | DeepSeekLLM":
+    """Factory: 'gemini:gemini-2.5-flash' | 'deepseek:deepseek-chat' | 'ollama:llama3.2'"""
     if ":" in spec:
         provider, model = spec.split(":", 1)
     else:
         provider, model = spec, ""
     if provider == "gemini":
         return GeminiLLM(model_name=model or "gemini-2.0-flash")
+    if provider == "deepseek":
+        return DeepSeekLLM(model_name=model or "deepseek-chat")
     if provider == "ollama":
         return OllamaLLM(model=model or "llama3.2")
     raise ValueError(f"Unknown LLM provider: {provider!r}")

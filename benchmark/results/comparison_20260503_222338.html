@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Comparison — CS598</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          background: #f8f9fa; color: #212529; line-height: 1.5; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Header */
+  .report-header { margin-bottom: 32px; border-bottom: 2px solid #dee2e6; padding-bottom: 16px; }
+  .report-header h1 { font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }
+  .report-meta { color: #6c757d; font-size: 0.875rem; margin-top: 6px; }
+
+  /* Summary cards */
+  .summary-row { display: flex; gap: 16px; margin-bottom: 40px; flex-wrap: wrap; }
+  .stat-card { background: #fff; border: 1px solid #dee2e6; border-radius: 12px;
+               padding: 20px 24px; flex: 1; min-width: 180px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .stat-model { font-size: 0.8rem; font-weight: 600; color: #6c757d; text-transform: uppercase;
+                letter-spacing: .04em; margin-bottom: 12px; }
+  .stat-row { display: flex; justify-content: space-between; align-items: center;
+              padding: 4px 0; border-bottom: 1px solid #f1f3f5; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: #495057; font-size: 0.875rem; }
+  .stat-value { font-weight: 600; font-size: 0.95rem; color: #1a1a2e; }
+
+  /* Charts */
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 48px; }
+  @media (max-width: 700px) { .charts-grid { grid-template-columns: 1fr; } }
+  .chart-card { background: #fff; border: 1px solid #dee2e6; border-radius: 12px;
+                padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .chart-card h2 { font-size: 1rem; font-weight: 600; color: #343a40; margin-bottom: 16px; }
+  canvas { max-height: 280px; }
+
+  /* Task outputs */
+  h2.section-title { font-size: 1.2rem; font-weight: 700; color: #1a1a2e; margin-bottom: 20px; }
+  .task-section { margin-bottom: 36px; }
+  .task-title { font-size: 1rem; font-weight: 600; color: #495057; margin-bottom: 12px;
+                padding-left: 10px; border-left: 3px solid #4285f4; }
+  .output-grid { display: grid; grid-template-columns: repeat(var(--cols, 2), 1fr); gap: 16px; }
+  @media (max-width: 700px) { .output-grid { grid-template-columns: 1fr; } }
+  .output-col { background: #fff; border: 1px solid #dee2e6; border-radius: 10px;
+                overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+  .output-model { background: #f1f3f5; padding: 8px 14px; font-size: 0.78rem;
+                  font-weight: 600; color: #495057; text-transform: uppercase; letter-spacing: .04em; }
+  .output-meta { padding: 4px 14px; font-size: 0.8rem; color: #868e96; background: #f8f9fa;
+                 border-bottom: 1px solid #e9ecef; }
+  .output-text { padding: 14px; font-size: 0.82rem; white-space: pre-wrap; word-break: break-word;
+                 max-height: 360px; overflow-y: auto; color: #212529; font-family: "SF Mono", "Fira Mono", monospace; }
+  .output-error .output-model { background: #fff5f5; color: #c0392b; }
+  .error-label { color: #c0392b !important; }
+  .output-empty { opacity: .5; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="report-header">
+    <h1>LLM Comparison Report</h1>
+    <div class="report-meta">
+      CS598 · Generated 2026-05-03 22:22:33 · Email source: 163 IMAP · Models: gemini:gemini-2.5-flash, deepseek:deepseek-chat
+    </div>
+  </div>
+
+  <div class="summary-row">
+    
+        <div class="stat-card">
+            <div class="stat-model">gemini-2.5-flash</div>
+            <div class="stat-row"><span class="stat-label">Avg Latency</span><span class="stat-value">11.47s</span></div>
+            <div class="stat-row"><span class="stat-label">Total Tokens</span><span class="stat-value">11,813</span></div>
+            <div class="stat-row"><span class="stat-label">Tasks OK</span><span class="stat-value">3/3</span></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-model">deepseek-chat</div>
+            <div class="stat-row"><span class="stat-label">Avg Latency</span><span class="stat-value">8.04s</span></div>
+            <div class="stat-row"><span class="stat-label">Total Tokens</span><span class="stat-value">4,970</span></div>
+            <div class="stat-row"><span class="stat-label">Tasks OK</span><span class="stat-value">3/3</span></div>
+        </div>
+  </div>
+
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h2>Response Latency (seconds)</h2>
+      <canvas id="chartLatency"></canvas>
+    </div>
+    <div class="chart-card">
+      <h2>Token Usage</h2>
+      <canvas id="chartTokens"></canvas>
+    </div>
+  </div>
+
+  <h2 class="section-title">Task Outputs</h2>
+  
+        <div class="task-section">
+            <h3 class="task-title">Inbox Summary</h3>
+            <div class="output-grid" style="--cols: 2">
+                
+                <div class="output-col">
+                    <div class="output-model">gemini:gemini-2.5-flash</div>
+                    <div class="output-meta">4.77s · 2159 tokens</div>
+                    <pre class="output-text">Here&#x27;s a summary of your inbox:
+
+*   **Security Alerts**: You received two security alerts from Google for your `wenxiao1026@gmail.com` account.
+*   **Subscription Cancellation**: Your PDFHelp.com subscription has been successfully cancelled, confirmed by a series of emails including support communications.
+*   **General Updates &amp; Promotions**: Includes a monthly statement from Qatar Airways, gaming news from Stardock Entertainment, and marketing/notifications from 异乡好居 and POP MART.</pre>
+                </div>
+                <div class="output-col">
+                    <div class="output-model">deepseek:deepseek-chat</div>
+                    <div class="output-meta">4.22s · 1308 tokens</div>
+                    <pre class="output-text">Here is a summary of the user&#x27;s inbox:
+
+- **Security Alerts from Google:** Two security alerts (May 1 and April 30) were sent for the Gmail account **wenxiao1026@gmail.com**, listing **damien183@163.com** as the recovery email. The user is advised to verify if this is expected or if the account may be compromised.
+- **Subscription Cancellation with PDFHelp.com:** A cancellation request was submitted and processed on April 30. The user received a confirmation of the request (Ticket #395221), followed by a reply from support and a final notice that the subscription has been cancelled.
+- **Qatar Airways Monthly Statement:** A monthly statement from Qatar Airways Privilege Club was received on May 3, likely containing account activity or balance information.
+- **Gaming Newsletters &amp; Promotions:** Includes updates from Stardock Entertainment (Sins II, GalCiv IV, etc.) and a promotional email from POP MART featuring an aespa collaboration.
+- **Group Buying Notifications (Chinese):** Two messages from &quot;异乡好居&quot; (a housing platform) about a group purchase deal ending soon (May 1) and having ended (May 2).</pre>
+                </div>
+            </div>
+        </div>
+        <div class="task-section">
+            <h3 class="task-title">Structured Extraction</h3>
+            <div class="output-grid" style="--cols: 2">
+                
+                <div class="output-col">
+                    <div class="output-model">gemini:gemini-2.5-flash</div>
+                    <div class="output-meta">9.85s · 3605 tokens</div>
+                    <pre class="output-text">```json
+[
+  {
+    &quot;sender&quot;: &quot;Qatar Airways Privilege Club&quot;,
+    &quot;subject&quot;: &quot;Li, your monthly statement has arrived&quot;,
+    &quot;date&quot;: &quot;Sun, 3 May 2026 19:08:09 +0000&quot;,
+    &quot;urgency_level&quot;: &quot;medium&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Stardock Entertainment&quot;,
+    &quot;subject&quot;: &quot;April Update: Sins II UI Horizons, GalCiv IV v3.3, and more&quot;,
+    &quot;date&quot;: &quot;2 May 2026 09:42:39 -0400&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;异乡好居&quot;,
+    &quot;subject&quot;: &quot;拼团已结束&quot;,
+    &quot;date&quot;: &quot;Sat, 2 May 2026 08:44:03 +0800 (CST)&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Google&quot;,
+    &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+    &quot;date&quot;: &quot;Fri, 01 May 2026 08:28:24 GMT&quot;,
+    &quot;urgency_level&quot;: &quot;high&quot;,
+    &quot;action_required&quot;: true
+  },
+  {
+    &quot;sender&quot;: &quot;异乡好居&quot;,
+    &quot;subject&quot;: &quot;拼团即将结束&quot;,
+    &quot;date&quot;: &quot;Fri, 1 May 2026 09:00:08 +0800 (CST)&quot;,
+    &quot;urgency_level&quot;: &quot;medium&quot;,
+    &quot;action_required&quot;: true
+  },
+  {
+    &quot;sender&quot;: &quot;POP MART&quot;,
+    &quot;subject&quot;: &quot;aespa&#x27;s Cozy World | From the Stage to Your Everyday Life&quot;,
+    &quot;date&quot;: &quot;Fri, 1 May 2026 04:36:50 +0800 (CST)&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Valeria Roberts (PDFhelp.com - Customer Support Team)&quot;,
+    &quot;subject&quot;: &quot;[pdfhelp] Re: Regarding Subscription Cancellation&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 20:18:59 +0000&quot;,
+    &quot;urgency_level&quot;: &quot;medium&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;PDFHelp.com&quot;,
+    &quot;subject&quot;: &quot;Your subscription has been cancelled ❌&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 20:18:49 +0000 (UTC)&quot;,
+    &quot;urgency_level&quot;: &quot;medium&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;PDFhelp.com - Customer Support Team&quot;,
+    &quot;subject&quot;: &quot;[Request #395221 received] - Regarding Subscription Cancellation&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 20:13:40 +0000&quot;,
+    &quot;urgency_level&quot;: &quot;medium&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Google&quot;,
+    &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 17:37:05 GMT&quot;,
+    &quot;urgency_level&quot;: &quot;high&quot;,
+    &quot;action_required&quot;: true
+  }
+]
+```</pre>
+                </div>
+                <div class="output-col">
+                    <div class="output-model">deepseek:deepseek-chat</div>
+                    <div class="output-meta">10.57s · 1881 tokens</div>
+                    <pre class="output-text">```json
+[
+  {
+    &quot;sender&quot;: &quot;Qatar Airways Privilege Club &lt;email@qr.qatarairways.com&gt;&quot;,
+    &quot;subject&quot;: &quot;Li, your monthly statement has arrived&quot;,
+    &quot;date&quot;: &quot;Sun, 3 May 2026 19:08:09 +0000&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Stardock Entertainment &lt;communications@stardockentertainment.info&gt;&quot;,
+    &quot;subject&quot;: &quot;April Update: Sins II UI Horizons, GalCiv IV v3.3, and more&quot;,
+    &quot;date&quot;: &quot;2 May 2026 09:42:39 -0400&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;异乡好居 &lt;notice@notice.cahouzz.com&gt;&quot;,
+    &quot;subject&quot;: &quot;拼团已结束&quot;,
+    &quot;date&quot;: &quot;Sat, 2 May 2026 08:44:03 +0800 (CST)&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Google &lt;no-reply@accounts.google.com&gt;&quot;,
+    &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+    &quot;date&quot;: &quot;Fri, 01 May 2026 08:28:24 GMT&quot;,
+    &quot;urgency_level&quot;: &quot;high&quot;,
+    &quot;action_required&quot;: true
+  },
+  {
+    &quot;sender&quot;: &quot;异乡好居 &lt;notice@notice.cahouzz.com&gt;&quot;,
+    &quot;subject&quot;: &quot;拼团即将结束&quot;,
+    &quot;date&quot;: &quot;Fri, 1 May 2026 09:00:08 +0800 (CST)&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;POP MART &lt;support@market.popmart.com&gt;&quot;,
+    &quot;subject&quot;: &quot;aespa&#x27;s Cozy World | From the Stage to Your Everyday Life&quot;,
+    &quot;date&quot;: &quot;Fri, 1 May 2026 04:36:50 +0800 (CST)&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Valeria Roberts (PDFhelp.com - Customer Support Team) &lt;support@pdfhelp.com&gt;&quot;,
+    &quot;subject&quot;: &quot;[pdfhelp] Re: Regarding Subscription Cancellation&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 20:18:59 +0000&quot;,
+    &quot;urgency_level&quot;: &quot;medium&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;PDFHelp.com &lt;support@pdfhelp.com&gt;&quot;,
+    &quot;subject&quot;: &quot;Your subscription has been cancelled ❌&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 20:18:49 +0000 (UTC)&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;PDFhelp.com - Customer Support Team &lt;support@pdfhelp.com&gt;&quot;,
+    &quot;subject&quot;: &quot;[Request #395221 received] - Regarding Subscription Cancellation&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 20:13:40 +0000&quot;,
+    &quot;urgency_level&quot;: &quot;low&quot;,
+    &quot;action_required&quot;: false
+  },
+  {
+    &quot;sender&quot;: &quot;Google &lt;no-reply@accounts.google.com&gt;&quot;,
+    &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+    &quot;date&quot;: &quot;Thu, 30 Apr 2026 17:37:05 GMT&quot;,
+    &quot;urgency_level&quot;: &quot;high&quot;,
+    &quot;action_required&quot;: true
+  }
+]
+```</pre>
+                </div>
+            </div>
+        </div>
+        <div class="task-section">
+            <h3 class="task-title">Priority &amp; Action</h3>
+            <div class="output-grid" style="--cols: 2">
+                
+                <div class="output-col">
+                    <div class="output-model">gemini:gemini-2.5-flash</div>
+                    <div class="output-meta">19.79s · 6049 tokens</div>
+                    <pre class="output-text">```json
+[
+  {
+    &quot;rank&quot;: 1,
+    &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+    &quot;reason&quot;: &quot;This is the most recent and critical security alert requiring immediate attention to protect the user&#x27;s account.&quot;,
+    &quot;action_needed&quot;: true,
+    &quot;suggestion&quot;: &quot;Immediately review alert, verify activity, secure account.&quot;
+  },
+  {
+    &quot;rank&quot;: 2,
+    &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+    &quot;reason&quot;: &quot;This is a critical security alert, likely from an earlier incident, which still requires verification.&quot;,
+    &quot;action_needed&quot;: true,
+    &quot;suggestion&quot;: &quot;Review the alert, verify activity, secure account if needed.&quot;
+  },
+  {
+    &quot;rank&quot;: 3,
+    &quot;subject&quot;: &quot;Your subscription has been cancelled ❌&quot;,
+    &quot;reason&quot;: &quot;This email confirms a successful and important action, the cancellation of a subscription.&quot;,
+    &quot;action_needed&quot;: true,
+    &quot;suggestion&quot;: &quot;Confirm cancellation details and keep for records.&quot;
+  },
+  {
+    &quot;rank&quot;: 4,
+    &quot;subject&quot;: &quot;[pdfhelp] Re: Regarding Subscription Cancellation&quot;,
+    &quot;reason&quot;: &quot;This is a direct response from customer support about the user&#x27;s subscription cancellation request, confirming it&#x27;s handled.&quot;,
+    &quot;action_needed&quot;: true,
+    &quot;suggestion&quot;: &quot;Review response to ensure cancellation process is complete.&quot;
+  },
+  {
+    &quot;rank&quot;: 5,
+    &quot;subject&quot;: &quot;拼团即将结束&quot;,
+    &quot;reason&quot;: &quot;This is a time-sensitive reminder about a group purchase ending soon, requiring potential user action.&quot;,
+    &quot;action_needed&quot;: true,
+    &quot;suggestion&quot;: &quot;Decide quickly if you want to join the group purchase before it ends.&quot;
+  },
+  {
+    &quot;rank&quot;: 6,
+    &quot;subject&quot;: &quot;[Request #395221 received] - Regarding Subscription Cancellation&quot;,
+    &quot;reason&quot;: &quot;This email confirms receipt of a support request, but subsequent emails provide more critical updates.&quot;,
+    &quot;action_needed&quot;: false,
+    &quot;suggestion&quot;: &quot;Keep for reference; main actions are covered by later emails.&quot;
+  },
+  {
+    &quot;rank&quot;: 7,
+    &quot;subject&quot;: &quot;Li, your monthly statement has arrived&quot;,
+    &quot;reason&quot;: &quot;This is an important informational monthly statement for a loyalty program, useful for financial records.&quot;,
+    &quot;action_needed&quot;: false,
+    &quot;suggestion&quot;: &quot;Archive for records; check points/miles if desired.&quot;
+  },
+  {
+    &quot;rank&quot;: 8,
+    &quot;subject&quot;: &quot;拼团已结束&quot;,
+    &quot;reason&quot;: &quot;This email informs about the conclusion of a group purchase, which is after the fact and less time-sensitive.&quot;,
+    &quot;action_needed&quot;: false,
+    &quot;suggestion&quot;: &quot;Review outcome if you participated; otherwise archive.&quot;
+  },
+  {
+    &quot;rank&quot;: 9,
+    &quot;subject&quot;: &quot;April Update: Sins II UI Horizons, GalCiv IV v3.3, and more&quot;,
+    &quot;reason&quot;: &quot;This is a general newsletter, primarily informational or promotional, with low urgency.&quot;,
+    &quot;action_needed&quot;: false,
+    &quot;suggestion&quot;: &quot;Read if interested in gaming updates; otherwise archive.&quot;
+  },
+  {
+    &quot;rank&quot;: 10,
+    &quot;subject&quot;: &quot;aespa&#x27;s Cozy World | From the Stage to Your Everyday Life&quot;,
+    &quot;reason&quot;: &quot;This is a promotional email, likely an advertisement, with no immediate action required.&quot;,
+    &quot;action_needed&quot;: false,
+    &quot;suggestion&quot;: &quot;Delete or archive if not interested in POP MART products.&quot;
+  }
+]
+```</pre>
+                </div>
+                <div class="output-col">
+                    <div class="output-model">deepseek:deepseek-chat</div>
+                    <div class="output-meta">9.34s · 1781 tokens</div>
+                    <pre class="output-text">[
+    {
+        &quot;rank&quot;: 1,
+        &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+        &quot;reason&quot;: &quot;Two security alerts for your Google account indicate a potential unauthorized recovery email, requiring urgent attention to prevent account compromise.&quot;,
+        &quot;action_needed&quot;: true,
+        &quot;suggestion&quot;: &quot;Review and remove unrecognized recovery email immediately.&quot;
+    },
+    {
+        &quot;rank&quot;: 2,
+        &quot;subject&quot;: &quot;Security alert for wenxiao1026@gmail.com&quot;,
+        &quot;reason&quot;: &quot;Duplicate security alert for the same account, reinforcing the urgency of the threat.&quot;,
+        &quot;action_needed&quot;: true,
+        &quot;suggestion&quot;: &quot;Check account activity and secure your Google account.&quot;
+    },
+    {
+        &quot;rank&quot;: 3,
+        &quot;subject&quot;: &quot;[pdfhelp] Re: Regarding Subscription Cancellation&quot;,
+        &quot;reason&quot;: &quot;Customer support response to your cancellation request may require follow-up or confirmation.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: &quot;Verify cancellation status if not already done.&quot;
+    },
+    {
+        &quot;rank&quot;: 4,
+        &quot;subject&quot;: &quot;Your subscription has been cancelled ❌&quot;,
+        &quot;reason&quot;: &quot;Confirmation of subscription cancellation, important for billing and service status.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: &quot;Keep for records; no further action needed.&quot;
+    },
+    {
+        &quot;rank&quot;: 5,
+        &quot;subject&quot;: &quot;[Request #395221 received] - Regarding Subscription Cancellation&quot;,
+        &quot;reason&quot;: &quot;Acknowledgment of your cancellation request, useful to track the process.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: &quot;No action; confirmation of receipt only.&quot;
+    },
+    {
+        &quot;rank&quot;: 6,
+        &quot;subject&quot;: &quot;Li, your monthly statement has arrived&quot;,
+        &quot;reason&quot;: &quot;Monthly statement from Qatar Airways may contain important account or billing details.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: &quot;Review statement for any discrepancies.&quot;
+    },
+    {
+        &quot;rank&quot;: 7,
+        &quot;subject&quot;: &quot;April Update: Sins II UI Horizons, GalCiv IV v3.3, and more&quot;,
+        &quot;reason&quot;: &quot;Newsletter from Stardock Entertainment; low urgency but may interest you.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: null
+    },
+    {
+        &quot;rank&quot;: 8,
+        &quot;subject&quot;: &quot;拼团已结束&quot;,
+        &quot;subject&quot;: &quot;Group purchase ended&quot;,
+        &quot;reason&quot;: &quot;Notification about a completed group buy; likely informational only.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: null
+    },
+    {
+        &quot;rank&quot;: 9,
+        &quot;subject&quot;: &quot;拼团即将结束&quot;,
+        &quot;subject&quot;: &quot;Group purchase ending soon&quot;,
+        &quot;reason&quot;: &quot;Reminder about an expiring group purchase; may need action if interested.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: null
+    },
+    {
+        &quot;rank&quot;: 10,
+        &quot;subject&quot;: &quot;aespa&#x27;s Cozy World | From the Stage to Your Everyday Life&quot;,
+        &quot;reason&quot;: &quot;Marketing email from POP MART; low importance and no urgent action needed.&quot;,
+        &quot;action_needed&quot;: false,
+        &quot;suggestion&quot;: null
+    }
+]</pre>
+                </div>
+            </div>
+        </div>
+
+</div>
+
+<script>
+const DATA = {"labels": ["Inbox Summary", "Structured Extraction", "Priority & Action"], "latency": [{"label": "gemini:gemini-2.5-flash", "data": [4.77, 9.85, 19.79], "backgroundColor": "rgba(66, 133, 244, 0.85)", "borderColor": "rgba(66, 133, 244, 1)", "borderWidth": 2, "borderRadius": 6}, {"label": "deepseek:deepseek-chat", "data": [4.22, 10.57, 9.34], "backgroundColor": "rgba(0, 191, 165, 0.85)", "borderColor": "rgba(0, 191, 165, 1)", "borderWidth": 2, "borderRadius": 6}], "tokens": [{"label": "gemini:gemini-2.5-flash", "data": [2159, 3605, 6049], "backgroundColor": "rgba(66, 133, 244, 0.85)", "borderColor": "rgba(66, 133, 244, 1)", "borderWidth": 2, "borderRadius": 6}, {"label": "deepseek:deepseek-chat", "data": [1308, 1881, 1781], "backgroundColor": "rgba(0, 191, 165, 0.85)", "borderColor": "rgba(0, 191, 165, 1)", "borderWidth": 2, "borderRadius": 6}]};
+const chartOpts = (title) => ({
+  responsive: true,
+  plugins: {
+    legend: { position: "top", labels: { font: { size: 12 } } },
+    tooltip: { mode: "index", intersect: false },
+  },
+  scales: {
+    x: { grid: { display: false } },
+    y: { beginAtZero: true, grid: { color: "rgba(0,0,0,.06)" } },
+  },
+});
+
+new Chart(document.getElementById("chartLatency"), {
+  type: "bar",
+  data: { labels: DATA.labels, datasets: DATA.latency },
+  options: chartOpts("Latency (s)"),
+});
+
+new Chart(document.getElementById("chartTokens"), {
+  type: "bar",
+  data: { labels: DATA.labels, datasets: DATA.tokens },
+  options: chartOpts("Tokens"),
+});
+</script>
+</body>
+</html>

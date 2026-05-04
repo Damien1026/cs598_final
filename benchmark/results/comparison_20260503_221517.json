@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-05-03 22:14:40",
+  "models": [
+    "gemini:gemini-2.5-flash",
+    "deepseek:deepseek-chat"
+  ],
+  "email_source": "163 IMAP",
+  "results": [
+    {
+      "model": "gemini:gemini-2.5-flash",
+      "task_id": "summarize",
+      "task_name": "Inbox Summary",
+      "latency_s": 3.95,
+      "tokens": 1904,
+      "output": "Here's a summary of your inbox:\n\n*   **Security Alerts:** You've received two security alerts from Google regarding your `wenxiao1026@gmail.com` account.\n*   **Subscription Cancellation:** Your PDFHelp.com subscription has been successfully cancelled, following a support request and subsequent confirmation.\n*   **Promotional & Updates:** You have a monthly statement from Qatar Airways, a gaming newsletter from Stardock Entertainment, a promotion from POP MART, and updates regarding a \"group purchase\" from 异乡好居.",
+      "error": ""
+    },
+    {
+      "model": "gemini:gemini-2.5-flash",
+      "task_id": "extract",
+      "task_name": "Structured Extraction",
+      "latency_s": 10.16,
+      "tokens": 3725,
+      "output": "```json\n[\n  {\n    \"sender\": \"Qatar Airways Privilege Club\",\n    \"subject\": \"Li, your monthly statement has arrived\",\n    \"date\": \"Sun, 3 May 2026 19:08:09 +0000\",\n    \"urgency_level\": \"low\",\n    \"action_required\": false\n  },\n  {\n    \"sender\": \"Stardock Entertainment\",\n    \"subject\": \"April Update: Sins II UI Horizons, GalCiv IV v3.3, and more\",\n    \"date\": \"2 May 2026 09:42:39 -0400\",\n    \"urgency_level\": \"low\",\n    \"action_required\": false\n  },\n  {\n    \"sender\": \"异乡好居\",\n    \"subject\": \"拼团已结束\",\n    \"date\": \"Sat, 2 May 2026 08:44:03 +0800 (CST)\",\n    \"urgency_level\": \"medium\",\n    \"action_required\": false\n  },\n  {\n    \"sender\": \"Google\",\n    \"subject\": \"Security alert for wenxiao1026@gmail.com\",\n    \"date\": \"Fri, 01 May 2026 08:28:24 GMT\",\n    \"urgency_level\": \"high\",\n    \"action_required\": true\n  },\n  {\n    \"sender\": \"异乡好居\",\n    \"subject\": \"拼团即将结束\",\n    \"date\": \"Fri, 1 May 2026 09:00:08 +0800 (CST)\",\n    \"urgency_level\": \"medium\",\n    \"action_required\": true\n  },\n  {\n    \"sender\": \"POP MART\",\n    \"subject\": \"aespa's Cozy World | From the Stage to Your Everyday Life\",\n    \"date\": \"Fri, 1 May 2026 04:36:50 +0800 (CST)\",\n    \"urgency_level\": \"low\",\n    \"action_required\": false\n  },\n  {\n    \"sender\": \"Valeria Roberts (PDFhelp.com - Customer Support Team)\",\n    \"subject\": \"[pdfhelp] Re: Regarding Subscription Cancellation\",\n    \"date\": \"Thu, 30 Apr 2026 20:18:59 +0000\",\n    \"urgency_level\": \"medium\",\n    \"action_required\": true\n  },\n  {\n    \"sender\": \"PDFHelp.com\",\n    \"subject\": \"Your subscription has been cancelled ❌\",\n    \"date\": \"Thu, 30 Apr 2026 20:18:49 +0000 (UTC)\",\n    \"urgency_level\": \"medium\",\n    \"action_required\": false\n  },\n  {\n    \"sender\": \"PDFhelp.com - Customer Support Team\",\n    \"subject\": \"[Request #395221 received] - Regarding Subscription Cancellation\",\n    \"date\": \"Thu, 30 Apr 2026 20:13:40 +0000\",\n    \"urgency_level\": \"medium\",\n    \"action_required\": false\n  },\n  {\n    \"sender\": \"Google\",\n    \"subject\": \"Security alert for wenxiao1026@gmail.com\",\n    \"date\": \"Thu, 30 Apr 2026 17:37:05 GMT\",\n    \"urgency_level\": \"high\",\n    \"action_required\": true\n  }\n]\n```",
+      "error": ""
+    },
+    {
+      "model": "gemini:gemini-2.5-flash",
+      "task_id": "prioritize",
+      "task_name": "Priority & Action Decision",
+      "latency_s": 13.44,
+      "tokens": 4482,
+      "output": "```json\n[\n  {\n    \"rank\": 1,\n    \"subject\": \"Security alert for wenxiao1026@gmail.com\",\n    \"reason\": \"This security alert indicates potential unauthorized access to your Google account, requiring immediate attention.\",\n    \"action_needed\": true,\n    \"suggestion\": \"Review alert immediately to secure account and verify activity.\"\n  },\n  {\n    \"rank\": 2,\n    \"subject\": \"Security alert for wenxiao1026@gmail.com\",\n    \"reason\": \"This security alert indicates potential unauthorized access to your Google account, requiring immediate attention.\",\n    \"action_needed\": true,\n    \"suggestion\": \"Review alert immediately to secure account and verify activity.\"\n  },\n  {\n    \"rank\": 3,\n    \"subject\": \"Your subscription has been cancelled ❌\",\n    \"reason\": \"This email confirms a critical action you requested, ensuring your subscription is terminated and preventing future charges.\",\n    \"action_needed\": false,\n    \"suggestion\": \"Confirm cancellation was successful and no further charges.\"\n  },\n  {\n    \"rank\": 4,\n    \"subject\": \"[pdfhelp] Re: Regarding Subscription Cancellation\",\n    \"reason\": \"This is a customer support reply regarding your subscription cancellation, important for confirming details and next steps.\",\n    \"action_needed\": false,\n    \"suggestion\": \"Review to ensure your cancellation request is being processed correctly.\"\n  },\n  {\n    \"rank\": 5,\n    \"subject\": \"[Request #395221 received] - Regarding Subscription Cancellation\",\n    \"reason\": \"This confirms your subscription cancellation request has been received, providing assurance that your query is in progress.\",\n    \"action_needed\": false,\n    \"suggestion\": \"Await further communication regarding the cancellation process.\"\n  },\n  {\n    \"rank\": 6,\n    \"subject\": \"拼团即将结束\",\n    \"reason\": \"This is a time-sensitive notification about a group purchase ending soon, which might require action if you intend to participate.\",\n    \"action_needed\": true,\n    \"suggestion\": \"Check if you want to join the group purchase before it ends.\"\n  },\n  {\n    \"rank\": 7,\n    \"subject\": \"Li, your monthly statement has arrived\",\n    \"reason\": \"This is your monthly loyalty program statement, important for tracking your points and account activity.\",\n    \"action_needed\": false,\n    \"suggestion\": \"Review for accuracy and to track your points.\"\n  },\n  {\n    \"rank\": 8,\n    \"subject\": \"拼团已结束\",\n    \"reason\": \"This email informs you that a group purchase has concluded, which might be relevant if you participated.\",\n    \"action_needed\": false,\n    \"suggestion\": \"Check for purchase outcome if you participated in the group.\"\n  },\n  {\n    \"rank\": 9,\n    \"subject\": \"April Update: Sins II UI Horizons, GalCiv IV v3.3, and more\",\n    \"reason\": \"This is a general newsletter with updates about games, which is informational rather than urgent.\",\n    \"action_needed\": false,\n    \"suggestion\": \"Read if interested in gaming news and updates.\"\n  },\n  {\n    \"rank\": 10,\n    \"subject\": \"aespa's Cozy World | From the Stage to Your Everyday Life\",\n    \"reason\": \"This is a promotional email about new merchandise, offering no immediate critical information or action.\",\n    \"action_needed\": false,\n    \"suggestion\": \"Delete or read if interested in POP MART products.\"\n  }\n]\n```",
+      "error": ""
+    },
+    {
+      "model": "deepseek:deepseek-chat",
+      "task_id": "summarize",
+      "task_name": "Inbox Summary",
+      "latency_s": 1.15,
+      "tokens": 0,
+      "output": "",
+      "error": "Client error '402 Payment Required' for url 'https://api.deepseek.com/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/402"
+    },
+    {
+      "model": "deepseek:deepseek-chat",
+      "task_id": "extract",
+      "task_name": "Structured Extraction",
+      "latency_s": 0.74,
+      "tokens": 0,
+      "output": "",
+      "error": "Client error '402 Payment Required' for url 'https://api.deepseek.com/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/402"
+    },
+    {
+      "model": "deepseek:deepseek-chat",
+      "task_id": "prioritize",
+      "task_name": "Priority & Action Decision",
+      "latency_s": 0.74,
+      "tokens": 0,
+      "output": "",
+      "error": "Client error '402 Payment Required' for url 'https://api.deepseek.com/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/402"
+    }
+  ]
+}
