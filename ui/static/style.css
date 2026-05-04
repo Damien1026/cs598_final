@@ -44,9 +44,11 @@ header h1 {
   color: var(--text);
 }
 
-.badge-blue  { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: var(--accent); color: #fff; font-size: 0.75rem; }
-.badge-red   { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: var(--danger); color: #fff; font-size: 0.75rem; }
-.badge-yellow{ display: inline-block; padding: 0 0.3em; border-radius: 3px; background: #d4a017;        color: #fff; font-size: 0.75rem; }
+.badge-blue   { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: var(--accent); color: #fff; font-size: 0.75rem; }
+.badge-red    { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: var(--danger); color: #fff; font-size: 0.75rem; }
+.badge-yellow { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: #e3b341;        color: #000; font-size: 0.75rem; }
+.badge-orange { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: #f0883e;        color: #fff; font-size: 0.75rem; }
+.badge-purple { display: inline-block; padding: 0 0.3em; border-radius: 3px; background: #a855f7;        color: #fff; font-size: 0.75rem; }
 
 .lineage-legend {
   display: flex;
@@ -117,11 +119,17 @@ button:hover {
 }
 
 .grid {
-  display: grid;
+  display: flex;
   gap: 1rem;
-  /* grid-template-columns: 280px 1fr; */
-  /* grid-template-columns: repeat(2, 1fr); */
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: flex-start;
+}
+
+.col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .panel {
@@ -143,6 +151,15 @@ button:hover {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.panel h3 {
+  font-size: 0.8rem;
+  margin: 0.6rem 0 0.25rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .meter {
@@ -181,9 +198,27 @@ button:hover {
   border-color: #d4a017;
 }
 
+.ev.taint-credential {
+  border-color: #a855f7;
+}
+
+.ev.taint-pii {
+  border-color: #f0883e;
+}
+
+.ev.taint-internal {
+  border-color: #e3b341;
+}
+
 .ev-type {
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.ev-body {
+  font-size: 0.82rem;
+  margin-top: 0.1rem;
+  line-height: 1.4;
 }
 
 .code {

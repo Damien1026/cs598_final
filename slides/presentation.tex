@@ -1,0 +1,568 @@
+\documentclass[aspectratio=169]{beamer}
+
+% ── Theme ────────────────────────────────────────────────────────────────────
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, backgrounds}
+\usepackage{graphicx}
+\usepackage{mdframed}
+
+% ── Colors ───────────────────────────────────────────────────────────────────
+\definecolor{deny}{RGB}{192,57,43}
+\definecolor{hitl}{RGB}{211,84,0}
+\definecolor{allow}{RGB}{39,174,96}
+\definecolor{cred}{RGB}{192,57,43}
+\definecolor{pii}{RGB}{211,84,0}
+\definecolor{intdoc}{RGB}{243,156,18}
+\definecolor{pub}{RGB}{39,174,96}
+\definecolor{phgray}{RGB}{140,140,140}
+
+% ── Macros ───────────────────────────────────────────────────────────────────
+\newcommand{\deny}[1]{\textcolor{deny}{\textbf{#1}}}
+\newcommand{\hitl}[1]{\textcolor{hitl}{\textbf{#1}}}
+\newcommand{\allow}[1]{\textcolor{allow}{\textbf{#1}}}
+\newcommand{\lcred}[1]{\colorbox{cred!20}{\texttt{\small #1}}}
+\newcommand{\lpii}[1]{\colorbox{pii!20}{\texttt{\small #1}}}
+\newcommand{\lint}[1]{\colorbox{intdoc!20}{\texttt{\small #1}}}
+\newcommand{\lpub}[1]{\colorbox{pub!20}{\texttt{\small #1}}}
+
+% Placeholder box — replace contents with actual screenshot before presenting
+% \placeholder[width_frac]{caption}  — portrait-ish box, height=2.6cm
+\newcommand{\placeholder}[2][0.85]{%
+  \begin{center}
+  \begin{tikzpicture}
+    \draw[dashed, phgray, thick, rounded corners]
+      (0,0) rectangle (#1\linewidth, 2.6cm);
+    \node[phgray, font=\small\itshape, text width=#1\linewidth-0.4cm,
+          align=center] at (#1\linewidth/2, 1.3cm)
+      {\textbf{[PLACEHOLDER]} #2};
+  \end{tikzpicture}
+  \end{center}
+}
+% \placeholderwide[width_frac]{caption} — landscape box, height=3.0cm
+\newcommand{\placeholderwide}[2][0.97]{%
+  \begin{center}
+  \begin{tikzpicture}
+    \draw[dashed, phgray, thick, rounded corners]
+      (0,0) rectangle (#1\linewidth, 3.0cm);
+    \node[phgray, font=\small\itshape, text width=#1\linewidth-0.4cm,
+          align=center] at (#1\linewidth/2, 1.5cm)
+      {\textbf{[PLACEHOLDER]} #2};
+  \end{tikzpicture}
+  \end{center}
+}
+
+% ── Meta ─────────────────────────────────────────────────────────────────────
+\title[Privacy \& Security Observability for LLM Agents]{%
+  Privacy \& Security Observability\\for Local LLM Agents}
+\subtitle{CS 598 --- Final Project Presentation}
+\author{Yiwei Fu \and Shunchang Chen \and Wenxiao Li}
+\date{May 2026}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+  \tableofcontents
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Motivation}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{The Problem: Agents Are Opaque by Default}
+  \begin{columns}[T]
+    \column{0.54\textwidth}
+    \textbf{LLM agents with tool access can:}
+    \begin{itemize}
+      \item Read private emails, credentials, internal docs
+      \item Chain tool calls across multiple turns
+      \item Write or POST sensitive data to arbitrary destinations
+    \end{itemize}
+    \vspace{0.5em}
+    \textbf{Standard logs record \emph{what} happened ---\\
+    not \emph{why}, \emph{which data}, or \emph{whether it was safe}.}
+    \vspace{0.5em}
+    \begin{block}{Core Question}
+      Can we wrap any local LLM agent with an observability layer
+      that tracks data provenance and enforces privacy policy ---
+      \emph{without touching the agent's code}?
+    \end{block}
+
+    \column{0.43\textwidth}
+    \begin{center}
+    \begin{tikzpicture}[font=\small, node distance=0.65cm,
+        box/.style={draw, rounded corners, minimum width=2.8cm,
+                    minimum height=0.6cm, align=center}]
+      \node[box, fill=blue!10] (llm) {LLM Agent};
+      \node[box, fill=yellow!20, below=of llm] (tool1) {\texttt{rag\_search}};
+      \node[box, fill=red!15, below=of tool1] (tool2) {\texttt{http\_post}};
+      \node[box, fill=gray!15, below=of tool2] (ext) {External Server};
+      \draw[->,thick] (llm) -- (tool1);
+      \draw[->,thick] (tool1) -- node[right,xshift=2pt,red]{\small PII?} (tool2);
+      \draw[->,thick] (tool2) -- node[right,xshift=2pt,red]{\small leaked?} (ext);
+      \node[phgray, font=\scriptsize, right=0.1cm of ext] {\textit{nobody knows}};
+    \end{tikzpicture}
+    \end{center}
+  \end{columns}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{System Design}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Our Approach: A Monitoring Companion}
+  \begin{columns}[T]
+    \column{0.52\textwidth}
+    \small\textbf{The framework runs \emph{alongside} any local agent you deploy.}
+    \vspace{0.2em}
+    \begin{itemize}\small
+      \item Start your agent as normal; start the companion in parallel
+      \item \textbf{Zero changes to agent code} --- I/O intercepted at \texttt{MonitoredIO}
+      \item Works with any LLM: Gemini, Ollama, OpenAI-compatible
+    \end{itemize}
+    \vspace{0.2em}
+    \begin{block}{What it gives you}
+      \small
+      \textbf{Visibility:} where did each piece of data go?\par
+      \textbf{Control:} pause the agent before a risky action\par
+      \textbf{Audit:} full provenance log for every run
+    \end{block}
+
+    \column{0.45\textwidth}
+    \begin{tikzpicture}[font=\scriptsize, node distance=0.45cm,
+        box/.style={draw, rounded corners, minimum width=3.2cm,
+                    minimum height=0.55cm, align=center}]
+      \node[box, fill=blue!10] (agent) {Your LLM Agent (unchanged)};
+      \node[box, fill=orange!20, below=of agent] (mio)
+            {\textbf{MonitoredIO} $\leftarrow$ intercept point};
+      \node[box, fill=red!10, below=of mio] (pipe)
+            {Taint $\to$ Policy $\to$ Risk $\to$ HITL};
+      \node[box, fill=green!10, below=of pipe] (hub)
+            {ObsHub $\to$ JSONL + WebSocket};
+      \node[box, fill=teal!10, below=of hub] (dash)
+            {Dashboard (localhost:8765)};
+      \draw[->,thick] (agent) -- (mio);
+      \draw[->,thick] (mio) -- (pipe);
+      \draw[->,thick] (pipe) -- (hub);
+      \draw[->,thick] (hub) -- (dash);
+      % Sidecar annotation
+      \begin{scope}[on background layer]
+        \node[draw=orange!60, dashed, thick, rounded corners, inner sep=4pt,
+              fit=(mio)(pipe)(hub)(dash),
+              label={[orange!70, font=\tiny]right:monitoring companion}] {};
+      \end{scope}
+    \end{tikzpicture}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Observability Pipeline}
+  \small
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \textbf{1. Taint Tracking}
+    \begin{itemize}
+      \item Labels at ingestion:
+        \lpub{public} \lint{internal\_doc} \lpii{pii} \lcred{credential}
+      \item Labels \emph{union} across tool calls; artifact IDs propagate
+    \end{itemize}
+    \vspace{0.15em}
+    \textbf{2. Policy Engine}
+    \begin{itemize}
+      \item Hard rules on (label, sink) pairs
+      \item Outcomes: \deny{DENY} \; \hitl{HITL} \; \allow{ALLOW}
+    \end{itemize}
+    \vspace{0.15em}
+    \textbf{3. Risk Score}\\[2pt]
+    $r = 0.55s + 0.35k + 0.10d - 0.15t$\\
+    {\footnotesize $s$=sensitivity, $k$=sink severity, $d$=chain depth, $t$=trust}
+
+    \column{0.48\textwidth}
+    \textbf{4. Trust Store}
+    \begin{itemize}
+      \item Fingerprint = SHA-256(tool + args + sink)
+      \item Decays $\times 0.99$/step; $+0.15$ allow, $-0.2$ deny
+      \item Higher trust $\Rightarrow$ higher HITL threshold
+    \end{itemize}
+    \vspace{0.15em}
+    \textbf{5. HITL Gate}
+    \begin{itemize}
+      \item Agent suspends on \texttt{asyncio.Future}
+      \item Human approves/denies in browser; trust updated
+    \end{itemize}
+    \vspace{0.15em}
+    \textbf{6. Lineage Graph}
+    \begin{itemize}
+      \item Every event $\to$ source/tool/sink provenance graph
+      \item Rendered live via D3 force-directed layout
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Policy Rules}
+  \begin{center}
+  \renewcommand{\arraystretch}{1.35}
+  \begin{tabular}{cllll}
+    \toprule
+    \textbf{Rule} & \textbf{Label} & \textbf{Sink} & \textbf{Decision} & \textbf{Rationale} \\
+    \midrule
+    R1   & \lcred{credential} / \lpii{pii}    & \texttt{http\_post\_external} & \deny{DENY}  & Direct exfiltration \\
+    R1b  & \lint{internal\_doc}               & \texttt{http\_post\_external} & \hitl{HITL}  & Review before sending \\
+    R2   & \lcred{credential}                 & \texttt{http\_get\_external}  & \hitl{HITL}  & Credential in URL params \\
+    R3   & $\geq$\lint{internal\_doc}         & file \emph{outside} allowlist & \deny{DENY}  & Unauthorized write \\
+    R3u  & (no label)                         & file \emph{outside} allowlist & \hitl{HITL}  & Unknown $=$ cautious \\
+    R4   & \lpii{pii}                         & file \emph{inside} allowlist  & \hitl{HITL}  & Confirm PII at rest \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+  \vspace{0.3em}
+  {\small Allowlisted write paths: \texttt{workspace/}, \texttt{notes/}, \texttt{./}
+  \hfill
+  Risk $\geq 0.72$ escalates any \allow{ALLOW} to \hitl{HITL} automatically.}
+\end{frame}
+
+\begin{frame}{Why Taint Tracking Matters: The ``Innocent Summary'' Attack}
+  \begin{columns}[T]
+    \column{0.44\textwidth}
+    \small\textbf{A 3-turn agent run:}
+
+    \begin{tikzpicture}[font=\scriptsize, node distance=0.35cm,
+        tbox/.style={draw, rounded corners, fill=blue!8,
+                     text width=4.6cm, minimum height=0.55cm,
+                     align=center, inner sep=2pt}]
+      \node[tbox] (t1)
+        {\textbf{T1:} \texttt{fetch\_gmail}
+         $\Rightarrow$ \colorbox{pii!25}{\scriptsize\texttt{artifact A: pii}}};
+      \node[tbox, below=0.38cm of t1] (t2)
+        {\textbf{T2:} \texttt{write\_file("summary.", ids=[A])}};
+      \node[tbox, below=0.38cm of t2] (t3)
+        {\textbf{T3:} \texttt{http\_post("summary.", ids=[A])}};
+      \draw[->,thick] (t1) -- node[right,xshift=1pt,font=\tiny]{A propagates} (t2);
+      \draw[->,thick] (t2) -- node[right,xshift=1pt,font=\tiny]{A still live} (t3);
+    \end{tikzpicture}
+
+    \column{0.54\textwidth}
+    \small
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{lll}
+      \toprule
+       & \textbf{Binary} & \textbf{Taint} \\
+      \midrule
+      \textbf{T1} & ``Allow fetch?'' & silent \\
+      \textbf{T2} & ``Allow write?'' & \textcolor{hitl}{\textbf{HITL}} R4 \\
+      \textbf{T3} & fatigued $\to$ yes & \textcolor{deny}{\textbf{DENY}} R1 \\
+      \bottomrule
+    \end{tabular}
+
+    \vspace{0.3em}
+    Body text \texttt{"summary."} has \textbf{no PII markers}.
+    Content-only inspection would pass this POST.
+    Taint tracks \emph{which artifact flows in} ---
+    not what the data looks like at the sink.
+
+    \vspace{0.25em}
+    \begin{block}{\small Fatigue resistance}
+      \small T3 is a hard \textcolor{deny}{\textbf{DENY}} --- automatic,
+      no prompt. A fatigued user \emph{cannot accidentally allow it}.
+    \end{block}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Phase 2: Wrapping a Gemini Multi-Agent Cluster}
+  \footnotesize
+  \begin{columns}[T]
+    \column{0.45\textwidth}
+    \textbf{Monitored system} (not the monitor itself):
+
+    \renewcommand{\arraystretch}{0.95}
+    \begin{tabular}{ll}
+      \toprule
+      \textbf{Agent} & \textbf{Allowed tools} \\
+      \midrule
+      Orchestrator & \texttt{delegate\_to\_*} only \\
+      Researcher   & email, RAG, \texttt{http\_get} \\
+      Analyst      & \texttt{read\_file}, \texttt{write\_note} \\
+      Output       & \texttt{write\_report}, \texttt{http\_post} \\
+      \bottomrule
+    \end{tabular}
+
+    \vspace{0.2em}
+    \textbf{The monitoring companion is entirely rule-based} ---
+    no LLM involved in analysis. All four agents share
+    \emph{one} \texttt{MonitoredIO} instance, zero code changes.
+    Real sources: 163 IMAP emails,
+    BM25 RAG over local \texttt{.md}/\texttt{.txt} files.
+
+    \column{0.52\textwidth}
+    \begin{tikzpicture}[font=\scriptsize, node distance=0.35cm and 0.3cm,
+        agent/.style={draw, rounded corners, fill=blue!10,
+                      minimum width=1.9cm, minimum height=0.45cm},
+        obs/.style={draw, rounded corners, fill=orange!15,
+                    minimum width=5.8cm, minimum height=0.45cm}]
+      \node[agent] (orch) {Orchestrator};
+      \node[agent, below left=0.45cm and 0.5cm of orch] (res) {Researcher};
+      \node[agent, below=0.45cm of orch] (ana) {Analyst};
+      \node[agent, below right=0.45cm and 0.5cm of orch] (out) {Output};
+      \draw[->,thick] (orch) -- (res);
+      \draw[->,thick] (orch) -- (ana);
+      \draw[->,thick] (orch) -- (out);
+      \node[obs, below=0.9cm of orch] (mio) {\textbf{MonitoredIO (shared)}};
+      \draw[->,thick,gray] (res) -- (mio);
+      \draw[->,thick,gray] (ana) -- (mio);
+      \draw[->,thick,gray] (out) -- (mio);
+      \node[obs, fill=red!10, below=0.25cm of mio]
+        (pipe) {Taint $\to$ Policy $\to$ Risk $\to$ HITL $\to$ ObsHub};
+      \draw[->,thick] (mio) -- (pipe);
+    \end{tikzpicture}
+  \end{columns}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{What the Tool Shows}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{The Dashboard: Real-Time Visibility}
+  \small
+  \begin{columns}[T]
+    \column{0.30\textwidth}
+    \textbf{Four panels, live via WebSocket:}
+    \begin{enumerate}
+      \item Risk meter
+      \item Lineage graph
+      \item HITL review
+      \item Event timeline
+    \end{enumerate}
+    \vspace{0.3em}
+    Task: \textit{``Retrieve the API key and verify it via HTTPS GET''} --- agent paused at \hitl{R2 HITL}.\\[0.2em]
+    All panels update in real time via WebSocket.
+
+    \column{0.68\textwidth}
+    \centering
+    \includegraphics[width=0.8\linewidth]{img_dashboard}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Case Study: Sensitive Data Exfiltration Attempt}
+  \small
+  \begin{columns}[T]
+    \column{0.46\textwidth}
+    \textbf{Scenario:} ``post the employee roster to an external server''
+    \vspace{0.2em}
+    \begin{enumerate}
+      \item Researcher fetches \texttt{employee\_roster.md}
+            $\Rightarrow$ taint: \lpii{pii}
+      \item Output agent calls \texttt{http\_post}
+            to \texttt{https://external.example/upload}
+      \item \textbf{R1 fires:}
+            \lpii{pii} $\to$ \texttt{http\_post\_external}
+            $\Rightarrow$ \deny{DENY} (action blocked)
+      \item Lineage graph: file $\to$ Researcher $\to$ Output
+            $\to$ \textcolor{deny}{blocked sink}
+    \end{enumerate}
+    \vspace{0.2em}
+    User sees exactly which document triggered the block
+    and which agent tried to send it.
+
+    \column{0.51\textwidth}
+    \includegraphics[width=0.92\linewidth]{img_lineage}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Case Study: Human-in-the-Loop Intervention}
+  \footnotesize
+  \begin{columns}[T]
+    \column{0.46\textwidth}
+    \textbf{Scenario:} agent retrieves internal roadmap from RAG and emails it externally
+    \vspace{0.1em}
+    \begin{enumerate}
+      \item Researcher searches RAG $\Rightarrow$ taint: \lint{internal\_doc}
+      \item Output agent calls \texttt{http\_post} to external URL
+      \item \textbf{R1b fires:}
+            \lint{internal\_doc} $\to$ \texttt{http\_post\_external}
+            $\Rightarrow$ \hitl{HITL} (agent pauses)
+      \item Dashboard shows orange HITL card:
+            sink, labels, risk score, fingerprint
+      \item Operator clicks \textbf{Deny} $\Rightarrow$ trust score
+            decremented, run continues
+    \end{enumerate}
+    \vspace{0.1em}
+    Trust decay: same fingerprint flagged \emph{earlier} next run.
+
+    \column{0.51\textwidth}
+    \includegraphics[width=0.92\linewidth]{img_hitl}
+  \end{columns}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Evaluation}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Policy Engine Correctness: 12-Scenario Verification}
+  \footnotesize
+  \renewcommand{\arraystretch}{0.85}
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Scenario} & \textbf{Exp.} & \textbf{Obs.} & \textbf{Risk} & \textbf{Rule} \\
+    \midrule
+    public read $\to$ allowlisted write              & \allow{ALLOW} & \allow{ALLOW} & 0.09 & ---  \\
+    public HTTP GET                                  & \allow{ALLOW} & \allow{ALLOW} & 0.00 & ---  \\
+    \lint{internal\_doc} $\to$ allowlisted write     & \allow{ALLOW} & \allow{ALLOW} & 0.23 & ---  \\
+    \lpub{public} $\to$ \texttt{http\_post\_external}& \allow{ALLOW} & \allow{ALLOW} & 0.29 & ---  \\
+    \midrule
+    \lpii{pii} $\to$ \texttt{http\_post\_external}   & \deny{DENY}   & \deny{DENY}   & 0.56 & R1   \\
+    \lcred{credential} $\to$ \texttt{http\_post\_ext}& \deny{DENY}   & \deny{DENY}   & 0.84 & R1   \\
+    \lint{internal\_doc} $\to$ outside allowlist     & \deny{DENY}   & \deny{DENY}   & 0.23 & R3   \\
+    \lpii{pii} $\to$ outside allowlist               & \deny{DENY}   & \deny{DENY}   & 0.37 & R3   \\
+    \midrule
+    \lcred{credential} $\to$ \texttt{http\_get\_ext} & \hitl{HITL}   & \hitl{HITL}   & 0.63 & R2   \\
+    \lint{internal\_doc} $\to$ \texttt{http\_post\_ext} & \hitl{HITL} & \hitl{HITL}  & 0.45 & R1b  \\
+    \lpii{pii} $\to$ allowlisted file write          & \hitl{HITL}   & \hitl{HITL}   & 0.32 & R4   \\
+    no taint $\to$ outside allowlist write           & \hitl{HITL}   & \hitl{HITL}   & 0.12 & R3u  \\
+    \bottomrule
+  \end{tabular}
+  \vspace{0.1em}
+  \begin{block}{}
+    \centering \textbf{12 / 12 pass.} Every rule fires exactly when it should, with deterministic \texttt{MockLLM}.
+  \end{block}
+\end{frame}
+
+% ═════════════════════════════════════════════════════════════════════════════
+\section{Discussion}
+% ═════════════════════════════════════════════════════════════════════════════
+
+\begin{frame}{Limitations}
+  \begin{columns}[T]
+    \column{0.48\textwidth}
+    \textbf{Taint heuristics are coarse:}
+    \begin{itemize}
+      \item Regex-based, context-free inference
+      \item ``Example SSN: 123-45-6789'' is tagged \lpii{pii} just like
+            a real one
+      \item No implicit inference from surrounding context
+    \end{itemize}
+    \vspace{0.4em}
+    \textbf{Taint is monotone:}
+    \begin{itemize}
+      \item Labels only union, never drop
+      \item A redacted summary still carries the source taint
+      \item May over-block legitimate summarization workflows
+    \end{itemize}
+
+    \column{0.48\textwidth}
+    \textbf{Policy is static:}
+    \begin{itemize}
+      \item Rules are hard-coded; no runtime reconfiguration
+      \item No per-user or per-role policies
+    \end{itemize}
+    \vspace{0.4em}
+    \textbf{Evaluation scope:}
+    \begin{itemize}
+      \item Correctness verified on \emph{scripted} tool-call sequences,
+            not real LLM outputs
+      \item Diverse attack patterns from a real agent may expose
+            gaps in the rule set
+      \item No user study conducted for the HITL / dashboard UX
+    \end{itemize}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Insights \& Takeaways}
+  \begin{block}{Wrapper-based observability is practical}
+    Inserting \texttt{MonitoredIO} required zero changes to agent code
+    and scales transparently from a single agent to a 4-agent cluster.
+    The same pattern applies to any tool-calling framework.
+  \end{block}
+  \vspace{0.35em}
+  \begin{block}{Recall $>$ Precision is the right trade-off for a safety layer}
+    A missed violation is strictly worse than an unnecessary escalation.
+    The system is precision-conservative: it prefers to surface ambiguous
+    cases for human review rather than silently permit them.
+  \end{block}
+  \vspace{0.35em}
+  \begin{block}{Trust decay enables lightweight adaptation}
+    Per-fingerprint trust lets the system learn from operator decisions
+    without any model fine-tuning. Repeated approvals raise the
+    threshold; repeated denials lower it.
+  \end{block}
+\end{frame}
+
+\begin{frame}{Future Potential: Toward a Principled Evaluation Platform}
+  \small
+  \textbf{The monitoring companion is also an evaluation harness.}
+  Every agent action is intercepted and logged, so the same
+  infrastructure can benchmark any agent's privacy/security behavior.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \column{0.32\textwidth}
+    \begin{block}{Manually curated tasks}
+      Hand-authored scenarios (like our sanity suite) for targeted
+      rule coverage and regression testing --- simple to extend,
+      high precision on known attack patterns.
+    \end{block}
+
+    \column{0.32\textwidth}
+    \begin{block}{Automated task generation}
+      Use an LLM to synthesize (task, expected-sensitivity) pairs
+      across sensitivity levels and sink types --- reduces human
+      bias, scales coverage.
+    \end{block}
+
+    \column{0.32\textwidth}
+    \begin{block}{LLM-as-mock-user (arena testing)}
+      Deploy a second LLM as a simulated user issuing naturalistic
+      requests; monitor the agent under test end-to-end.
+      Enables red-team/blue-team evaluation.
+    \end{block}
+  \end{columns}
+
+  \vspace{0.25em}
+  All three modes plug into \texttt{run\_sanity.py} /
+  \texttt{run\_synthetic.py} --- only the task source changes.
+\end{frame}
+
+% ── Closing ──────────────────────────────────────────────────────────────────
+\begin{frame}{Summary}
+  \small
+  \begin{columns}[T]
+    \column{0.50\textwidth}
+    \textbf{What we built:}
+    \begin{itemize}
+      \item A \textbf{monitoring companion} that runs parallel to any
+            local LLM agent --- zero agent-side changes required
+      \item Dynamic taint tracking + policy engine (6 rules, 3 outcomes)
+      \item Risk scoring + adaptive per-fingerprint trust decay
+      \item Real-time dashboard: event stream, risk meter, HITL panel,
+            D3 lineage graph
+      \item Multi-agent Gemini cluster with real email + RAG sources
+    \end{itemize}
+
+    \column{0.47\textwidth}
+    \textbf{Key results:}
+    \begin{itemize}
+      \item \textbf{12/12} policy correctness scenarios pass
+      \item Every rule (R1--R4, R1b, R3u) fires exactly as specified
+      \item \textbf{Zero missed violations} across all test modes
+      \item \placeholder[0.85]{Key metric from a live Gemini run.}
+    \end{itemize}
+  \end{columns}
+
+  \vspace{0.1em}
+  \begin{center}
+    \large Thank you! \quad Questions?\\[0.1em]
+    \normalsize\texttt{github.com/Damien1026/cs598\_final}
+  \end{center}
+\end{frame}
+
+\end{document}
