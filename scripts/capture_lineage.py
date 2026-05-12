@@ -16,7 +16,8 @@ async def main():
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page(viewport={"width": 1280, "height": 900})
+        # Wide viewport so the lineage panel gets extra horizontal space → landscape crop
+        page = await browser.new_page(viewport={"width": 1600, "height": 900})
 
         print("Opening dashboard...")
         await page.goto("http://127.0.0.1:8765/")

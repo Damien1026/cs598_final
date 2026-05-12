@@ -6,3 +6,17 @@ sandbox/logs/
 sandbox_eval/
 sandbox_practical/
 sandbox_debug/
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+texput.log

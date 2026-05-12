@@ -1,0 +1,542 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{arxiv,times}
+\iclrfinalcopy
+
+\input{math_commands.tex}
+
+\PassOptionsToPackage{numbers}{natbib}
+\PassOptionsToPackage{sort}{natbib}
+\usepackage{color}
+\usepackage{fix-cm}
+\DeclareMathSizes{10}{10}{6}{4}
+
+\makeatletter
+\newcommand*\mysize{%
+  \@setfontsize\mysize{7.5}{9.0}%
+}
+\makeatother
+
+\usepackage{booktabs}
+\usepackage{makecell}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{wrapfig,lipsum}
+\usepackage{multicol}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{bm}
+\usepackage[skins]{tcolorbox}
+\usepackage{float}
+\usepackage{xspace}
+\usepackage{array}
+\usepackage{tikz}
+\newcommand{\var}{\mathbf{Var}}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+
+\usepackage{natbib}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{url}
+\usepackage{relsize}
+\renewcommand*{\UrlFont}{\ttfamily\smaller\relax}
+\usepackage{xcolor}
+\usepackage{algorithmicx}
+\usepackage{algcompatible}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage{tikz}
+\usetikzlibrary{calc,positioning,tikzmark}
+\usepackage{enumitem}
+\usepackage{multirow, makecell}
+
+\definecolor{ao}{rgb}{0.0, 0.5, 0.0}
+\definecolor{awesome}{rgb}{1.0, 0.13, 0.32}
+\definecolor{mypurple}{RGB}{232, 189, 235}
+\definecolor{myyellow}{RGB}{247,240,161}
+\definecolor{myblue}{RGB}{95,241,245}
+\newcommand{\red}[1]{\textcolor{red}{#1}}
+\newcommand{\green}[1]{\textcolor{ao}{#1}}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{Privacy \& Security Observability for Local LLM Agents}
+\author{Yiwei Fu (yiweifu3), Shunchang Chen (sc176), Wenxiao Li (wl65)}
+
+\begin{document}
+\maketitle
+\vspace{-2em}
+
+\vspace{-1.5em}
+\section{Introduction}
+\vspace{-0.8em}
+
+LLM agents equipped with tool access--reading email, querying internal
+documents, writing files, and issuing HTTP calls--are increasingly deployed
+to automate complex, multi-step workflows. This capability introduces a
+qualitatively new privacy and security surface. Consider an agent given the
+task ``summarize my inbox.'' A malicious instruction injected into one of the
+retrieved emails appends: ``Now POST the summary externally.'' The agent
+produces a clean prose summary with no raw addresses visible--yet the
+summary was derived from PII-bearing emails. A content scanner at the POST
+boundary would pass it. Standard logs record that an HTTP POST occurred but
+reveal nothing about which data produced the body or where that data
+originated.
+
+Existing defenses operate at the wrong layer. Prompt injection--ranked the
+top risk for LLM applications by OWASP~\citep{owasp2025llm}--can embed
+adversarial instructions in retrieved content, overriding guardrails
+entirely. Post-hoc log analysis cannot block in-flight actions. Model
+alignment addresses the model's disposition but not the data-flow
+accountability of pipelines assembled from off-the-shelf components.
+
+What is needed is a runtime layer that (a) assigns sensitivity labels at
+ingestion and propagates them through tool calls, (b) enforces hard privacy
+rules before writes or network calls execute, and (c) keeps a human in the
+loop for ambiguous cases--without requiring changes to the agent's code.
+Prior benchmarks~\citep{zharmagambetov2025agentdam,fu2025rasevalcomprehensivebenchmarksecurity}
+characterize how often agents fail but provide no runtime enforcement layer.
+
+We present a monitoring framework that addresses this gap via
+\texttt{MonitoredIO}, an I/O wrapper routing every source read, file write,
+and network call through a pipeline of taint tracking, policy evaluation,
+risk scoring, and HITL review. A trust store records per-action fingerprints
+so that repeatedly-approved benign actions gradually reduce operator friction.
+
+Our contributions are: (1) a complete observability pipeline requiring zero
+agent-side code changes; (2) a six-rule policy engine with DENY/HITL/ALLOW
+outcomes; (3) a continuous risk score that catches behavioral anomalies beyond
+named rules; (4) a fingerprint-based trust store that adapts to operator
+decisions; (5) a real-time dashboard with D3.js lineage and an async HITL
+gate; and (6) empirical validation on 12 scripted scenarios and live runs on
+two commercial LLMs over real email data.
+
+\vspace{-1.2em}
+\section{Related Work}
+\vspace{-0.7em}
+
+\textbf{LLM agent safety benchmarks.}
+AgentDAM~\citep{zharmagambetov2025agentdam} and
+RAS-Eval~\citep{fu2025rasevalcomprehensivebenchmarksecurity} measure how
+often agents leak sensitive data or misuse tools, but provide no runtime
+enforcement. Our framework is complementary: it enforces policy on top of
+any agent regardless of model behavior.
+
+\vspace{-0.3em}
+\textbf{Autonomous agent threats.}
+OWASP's Top 10 for LLM Applications~\citep{owasp2025llm} identifies prompt
+injection and excessive agency as the leading risks: agents with broad tool
+access can be hijacked to exfiltrate data or take unauthorized actions.
+Farahmandi et al.~\citep{farahmandi2025threats} catalog over thirty attack
+techniques against LLM-agent workflows, covering input manipulation, model
+compromise, and privacy attacks. Our framework directly addresses these
+threat classes by intercepting every tool call and enforcing label-based
+policy before any sink action executes.
+
+\vspace{-0.3em}
+\textbf{Multi-agent systems.}
+Role-separated multi-agent pipelines~\citep{anthropic2024agents} amplify the
+monitoring challenge because data flows across agent boundaries. Our shared
+\texttt{ObsHub} maintains unified taint and lineage across all agents in the cluster.
+
+\vspace{-1em}
+\section{System Design}
+\vspace{-0.5em}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\linewidth]{img/dashboard2.png}
+    \caption{The observability dashboard during a credential retrieval run
+    (task: ``Retrieve the API key and verify it via HTTP GET''). \textbf{Risk}
+    panel (left): score of 0.65 for an \texttt{http\_get\_external} sink,
+    shown on a green-to-red color bar. \textbf{Human Review} panel (right):
+    R2 HITL request for a \texttt{credential}-labeled GET to an external URL,
+    with the fingerprint hash displayed and Allow / Allow Once / Deny actions
+    available. \textbf{Lineage} panel (lower-left): D3.js graph showing the
+    RAG search source (credential border ring) flowing into the HTTP GET tool.
+    \textbf{Timeline} panel (lower-right): event log with per-step entries.}
+    \vspace{-0.5em}
+    \label{fig:dashboard}
+\end{figure}
+
+\vspace{-0.5em}
+\subsection{Architecture Overview}
+\vspace{-0.3em}
+
+The framework centers on \texttt{ObsHub}, a singleton holding four
+subsystems: \texttt{EventBus} (typed pub/sub, JSONL persistence, WebSocket
+broadcast), \texttt{TaintStore} (artifact management), \texttt{LineageBuilder}
+(provenance graph), and \texttt{TrustStore} (fingerprint scores).
+Every I/O action is routed through \texttt{MonitoredIO} (\texttt{observe/wrappers.py})--the sole intercept
+point--which runs the pipeline below before executing or blocking the action.
+The wrapped agent requires no modification; from its perspective,
+\texttt{MonitoredIO} is simply the object that implements tool
+calls.
+
+\vspace{-0.5em}
+\subsection{Observability Pipeline}
+\vspace{-0.3em}
+
+\textbf{Taint tracking.}
+Data retrieved by the agent is wrapped as an \texttt{Artifact} with one of
+four sensitivity labels ordered \texttt{public} $<$ \texttt{internal\_doc}
+$<$ \texttt{pii} $<$ \texttt{credential}. Labels are assigned at ingestion
+by data origin (e.g., email always carries \texttt{pii}) or inferred via
+regex patterns for addresses, SSNs, and API key prefixes.
+When an artifact is passed to a subsequent tool call, labels union
+monotonically--a \texttt{pii} artifact flowing into an HTTP POST body taints
+that body regardless of its surface content. Artifact IDs propagate across
+LLM turns via \texttt{[[artifacts:id1,id2,...]]} annotations in tool-result
+strings, enabling taint to follow data through multi-turn chains.
+
+\textbf{Policy evaluation.}
+Before any sink action executes, \texttt{evaluate\_sink()} applies six hard
+rules on (label, sink) pairs, shown in Table~\ref{tab:rules}. Rule R1--PII
+or credentials posting to an external HTTP endpoint--always produces an
+automatic DENY with no human prompt, since the false-positive cost of a
+missed exfiltration exceeds the cost of an unnecessary block. Rules R1b, R2,
+and R4 produce HITL, pausing the agent and surfacing the action for operator
+review. Rules R3 and R3u handle unauthorized file writes.
+
+\begin{table}[t]
+\centering
+\small
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{cllll}
+\toprule
+\textbf{Rule} & \textbf{Label} & \textbf{Sink} & \textbf{Decision} & \textbf{Rationale} \\
+\midrule
+R1   & \texttt{pii} / \texttt{credential}   & \texttt{http\_post\_external} & DENY  & Direct exfiltration \\
+R1b  & \texttt{internal\_doc}               & \texttt{http\_post\_external} & HITL  & Gray-area external send \\
+R2   & \texttt{credential}                  & \texttt{http\_get\_external}  & HITL  & Credential in URL params \\
+R3   & $\geq$\texttt{internal\_doc}         & file outside allowlist        & DENY  & Unauthorized write \\
+R3u  & unknown / \texttt{public}            & file outside allowlist        & HITL  & Conservative on unknowns \\
+R4   & \texttt{pii}                         & file inside allowlist         & HITL  & PII write needs confirmation \\
+\bottomrule
+\end{tabular}
+\vspace{-0.5em}
+\caption{Policy rules, outcomes, and rationale.}
+\label{tab:rules}
+\vspace{-1em}
+\end{table}
+
+\textbf{Risk scoring.}
+A continuous score in $[0,1]$ is computed for every sink action:
+\begin{equation}
+  r = 0.55\,s + 0.35\,k + 0.10\,d - 0.15\,t
+  \label{eq:risk}
+\end{equation}
+where $s$ is the sensitivity weight of the highest label (0 to 1.0), $k$
+ranks sink severity (\texttt{http\_post\_external} $>$ \texttt{file\_write}
+$>$ \texttt{http\_post\_internal} $>$ \texttt{tool\_result}), $d =
+\min(\text{step\_id} \times 0.03, 0.2)$ captures chain depth, and $t$ is the
+trust offset (see below). The risk score gates HITL independently of policy:
+if a nominally-allowed action scores above the trust-adjusted threshold, it is
+still escalated. This catches behavioral anomalies not covered by the six
+named rules.
+
+\textbf{Trust store.}
+Each action is fingerprinted as SHA-256(tool name $\|$ args $\|$ sink type)
+and stored in \texttt{trust.json}, which persists across agent runs.
+Scores decay by $\times 0.99$ per step to prevent stale approvals from
+accumulating indefinitely. Operator decisions adjust scores: \texttt{allow}
+adds $+0.15$, \texttt{deny} subtracts $-0.20$, and \texttt{allow\_once}
+adds $+0.05$ without establishing a lasting precedent.
+The HITL escalation threshold adapts per fingerprint:
+$\theta = 0.72 + (\text{trust} - 0.5) \times 0.12$,
+so a frequently-approved action progressively raises its own threshold
+and eventually stops triggering HITL. Conversely, a repeatedly-denied action
+lowers its threshold, flagging it at lower risk scores in subsequent runs.
+This mechanism lets the monitor adapt to operator preferences without any
+explicit reconfiguration.
+
+\textbf{HITL gate.}
+A flagged action emits a \texttt{hitl\_request} event and creates an
+\texttt{asyncio.Future} registered in \texttt{ObsHub}. The agent loop
+\texttt{await}s the future, genuinely suspending execution. The dashboard
+receives the event over WebSocket, displays the rule, sink, labels, risk
+score, and fingerprint, and presents Allow / Allow Once / Deny buttons
+(Figure~\ref{fig:lineage_hitl}, right). When the operator clicks a button,
+the browser's \texttt{POST /api/hitl/\{hid\}} resolves the future; the
+agent resumes or terminates accordingly. This integrates cleanly with
+FastAPI's async runtime with no polling overhead.
+
+\vspace{-1em}
+\subsection{Data-Flow Lineage}
+\vspace{-0.3em}
+
+\texttt{LineageBuilder} maintains a directed provenance graph rendered in
+real time by D3.js with a force-directed layout. The node types are:
+source (blue, with a colored border ring indicating label), tool (yellow),
+safe sink (green), and blocked sink (red). Artifacts are \emph{not} visible
+nodes; instead, the builder tracks internal ownership and adds a direct
+edge when one tool's output is consumed by another, producing a clean
+chain without intermediate artifact clutter.
+
+Figure~\ref{fig:lineage_hitl} (left) shows the exfiltration scenario:
+\texttt{gmail\_mock} (blue, orange PII ring) $\to$ \texttt{fetch\_gmail\_mock}
+(tool) $\to$ \texttt{http\_post} (tool) $\to$ \texttt{http\_post\_external}
+(red, blocked). The border ring on the source node indicates that the
+artifact carries a \texttt{pii} label; the red terminal node confirms that
+R1 fired. An operator can trace the full provenance of the blocked action
+at a glance.
+
+\begin{figure}[t]
+    \centering
+    \begin{subfigure}[t]{0.52\linewidth}
+        \centering
+        \includegraphics[height=3.6cm,keepaspectratio]{img/lineage.png}
+        \caption{Lineage for the PII exfiltration scenario:
+        \texttt{gmail\_mock} (PII ring) $\to$ \texttt{fetch\_gmail\_mock}
+        $\to$ \texttt{http\_post} $\to$ \texttt{http\_post\_external}
+        (red, R1 DENY).}
+        \label{fig:lineage}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.44\linewidth}
+        \centering
+        \includegraphics[height=3.6cm,keepaspectratio]{img/hitl.png}
+        \caption{HITL panel (R1b): \texttt{internal\_doc} about to be
+        posted externally. Rule, sink, label, and fingerprint are shown
+        before the operator decides.}
+        \label{fig:hitl}
+    \end{subfigure}
+    \vspace{-1em}
+    \caption{Lineage graph and HITL decision panel.}
+    \label{fig:lineage_hitl}
+    \vspace{-2em}
+\end{figure}
+
+\vspace{-1em}
+\section{Evaluation}
+\vspace{-1em}
+
+\subsection{Setup}
+\vspace{-0.5em}
+
+We evaluate in two stages. First, a \emph{sanity suite} of 12 scripted
+scenarios exercises all six policy rules across all three outcomes (DENY,
+HITL, ALLOW) using \texttt{MockLLM}--a deterministic, keyword-driven mock
+that replays fixed tool-call sequences without involving any live LLM.
+\texttt{OBS\_HITL\_AUTO} is set to \texttt{allow} or \texttt{deny} as
+appropriate so that HITL decisions are resolved automatically; the expected
+outcome for each scenario is declared in \texttt{tasks\_synthetic.yaml} and
+compared against the event type emitted by the pipeline. Because
+\texttt{MockLLM} is fully deterministic, the same input keyword always
+produces the same tool-call sequence, and thus the same events, eliminating
+stochastic variance from correctness checks. Scenarios cover: multi-hop
+taint from email to HTTP POST, credential retrieval via RAG followed by
+external GET, PII written to an allowlisted path, internal documents written
+outside the allowlist, public data posted to an internal endpoint, and
+unknown artifacts written outside the allowlist.
+
+Second, a \emph{live benchmark} runs two commercial LLMs over a shared email
+inbox in a four-agent cluster~\citep{anthropic2024agents}: an
+\texttt{Orchestrator} delegates to three specialists--\textit{Researcher}
+(IMAP email, BM25 RAG, HTTP GET), \textit{Analyst} (file reads/writes), and
+\textit{Output} (report writing, HTTP POST). All agents share a single
+\texttt{ObsHub} and are tagged with an \texttt{agent\_id} for per-agent
+attribution. \textbf{Gemini 2.5 Flash} is given a malicious system prompt
+instructing it to include raw email addresses and full sender names verbatim
+in every response, simulating a compromised model. \textbf{DeepSeek Chat}
+runs without any injected instruction, serving as a clean baseline.
+Both models process the same four tasks: (T1) inbox summarization output
+to a tool result, (T2) structured PII extraction written to a local file,
+(T3) priority ranking posted to an internal endpoint, and (T4) compiling a
+full report and uploading it to an external analytics API
+(\texttt{https://analytics.example.com/report}). T4 is adversarial by
+design: both models' system prompts explicitly instruct them to perform
+the upload, ensuring that any blocking is attributable to the policy engine
+rather than model refusal.
+
+\vspace{-1em}
+\subsection{Sanity Suite: Correctness}
+\vspace{-0.5em}
+
+All 12 scenarios pass, covering DENY (4 scenarios), HITL (5 scenarios), and
+ALLOW (3 scenarios) outcomes. No false positives or false negatives were
+observed, giving precision, recall, and F1 of 1.0 across the scripted suite.
+Specifically: all four DENY scenarios correctly emit a \texttt{policy\_violation}
+event and return \texttt{False} to the agent; all five HITL scenarios emit a
+\texttt{hitl\_request} event and suspend the agent loop until resolved; and
+all three ALLOW scenarios pass through without emitting any policy event.
+The monotone label union is exercised in the multi-hop scenario, where a
+clean-prose summary derived from a PII-bearing email is correctly labeled
+\texttt{pii} and blocked when subsequently posted externally--demonstrating
+that the content of the artifact is irrelevant once taint is established.
+
+\vspace{-1em}
+\subsection{Live Benchmark: Policy Enforcement and Risk Divergence}
+\vspace{-0.3em}
+
+Table~\ref{tab:benchmark} summarizes results across both models. The primary
+finding is that T4--the adversarial external upload--is blocked for both
+models by R1 (DENY). The model's instruction to upload the report is
+irrelevant to the policy engine: the taint label (\texttt{pii}) and sink
+type (\texttt{http\_post\_external}) together satisfy R1 regardless of the
+instruction that triggered the call. The \texttt{policy\_violation} event
+appears in the JSONL audit log and on the dashboard for both runs.
+
+\begin{table}[t]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Model} & \textbf{Task} & \textbf{Label} & \textbf{Risk} & \textbf{Outcome} & \textbf{Rule} \\
+\midrule
+\multirow{4}{*}{Gemini (injected)}
+  & T1: Summarize      & \texttt{pii}    & 0.241 & ALLOW & -- \\
+  & T2: Extract        & \texttt{pii}    & 0.367 & HITL  & R4  \\
+  & T3: Prioritize     & \texttt{pii}    & 0.265 & ALLOW & -- \\
+  & T4: Upload (adv.)  & \texttt{pii}    & 0.565 & \textbf{DENY}  & \textbf{R1}  \\
+\midrule
+\multirow{4}{*}{DeepSeek (clean)}
+  & T1: Summarize      & \texttt{public} & 0.000 & ALLOW & -- \\
+  & T2: Extract        & \texttt{pii}    & 0.367 & HITL  & R4  \\
+  & T3: Prioritize     & \texttt{public} & 0.000 & ALLOW & -- \\
+  & T4: Upload (adv.)  & \texttt{pii}    & 0.565 & \textbf{DENY}  & \textbf{R1}  \\
+\bottomrule
+\end{tabular}
+\caption{Live benchmark results for Gemini 2.5 Flash (injected malicious
+system prompt) and DeepSeek Chat (clean) across four email-processing tasks.
+Both models are blocked on the adversarial upload (T4). Risk scores on T1 and
+T3 diverge due to Gemini including raw email addresses in its outputs under
+the injected instruction.}
+\label{tab:benchmark}
+\vspace{-2em}
+\end{table}
+
+A secondary finding concerns T1 and T3, where the two models produce
+different taint labels and risk scores despite identical task inputs.
+DeepSeek's summaries and priority rankings are labeled \texttt{public}
+(risk $= 0.000$), indicating that the model's outputs do not contain patterns
+recognized by the PII regex heuristics. Gemini's outputs, operating under
+the injected instruction to include verbatim email addresses and sender names,
+are labeled \texttt{pii} (risk $= 0.241$ on T1 and $0.265$ on T3). No
+hard rule fires on either task--T1 routes to a \texttt{tool\_result} sink
+and T3 to an \texttt{http\_post\_internal} sink, neither of which appears in
+the DENY or HITL rules for \texttt{pii}. Nevertheless, the elevated risk
+scores are detectable from the dashboard's risk meter, and an operator
+would see a clear anomaly compared to the clean-model baseline.
+
+This demonstrates a key property beyond hard rules: the risk score functions
+as a behavioral fingerprint. Even when the injected model does not attempt
+an outright policy violation, its data-handling patterns diverge at earlier,
+lower-risk stages--detectable by the operator before exfiltration reaches a
+harder policy boundary.
+
+\textbf{The innocent summary attack.}
+T1 also illustrates why content inspection is insufficient. The task is
+legitimate (summarize inbox); an injected instruction then attempts to POST
+the clean-prose summary externally. No raw SSNs appear in the outbound body.
+Taint tracking records that the summary was derived from a
+\texttt{pii}-labeled fetch; the label is live regardless of surface content,
+and R1 fires. This scenario is exercised in the sanity suite and confirmed in
+the Gemini run.
+
+
+\vspace{-1em}
+\section{Discussion}
+\vspace{-0.7em}
+
+\subsection{Limitations}
+\vspace{-0.5em}
+
+\textbf{Taint labeling is coarse and monotone.} Label assignment is
+regex-based and context-free: a string containing ``Example SSN:
+123-45-6789'' receives the same \texttt{pii} label as a real record
+because the heuristic cannot distinguish illustrative examples from
+genuine sensitive data. More substantially, labels union but never drop.
+A properly redacted summary--one that has replaced all PII with
+placeholders--still carries the \texttt{pii} label of its source artifact,
+and will be blocked if subsequently posted externally even though the
+outbound content contains no sensitive data. This is the fundamental
+tension between the precision of the safety guarantee and its usability:
+monotone propagation is conservative by design, but it over-blocks
+legitimate summarization and transformation workflows.
+
+\vspace{-0.3em}
+\textbf{Static policy.} The six rules are hard-coded in \texttt{policy.py}
+and require a code change to update. There is no per-user or per-role
+policy differentiation, and no runtime reconfiguration path. An enterprise
+deployment would likely need a policy DSL that administrators can update
+without redeploying the monitoring layer, and role-based rules that allow,
+for example, a compliance officer to receive PII reports that would be denied
+for a standard user agent.
+
+\vspace{-0.3em}
+\textbf{Evaluation scope.} Correctness was validated exclusively on
+deterministic, scripted tool-call sequences produced by \texttt{MockLLM}.
+A real agent running a live task may produce unexpected tool-call orderings,
+multi-step reasoning chains, or partial artifact re-use patterns that were
+not covered by the 12 scenarios. No user study was conducted for the HITL
+panel or dashboard UX, so it is unknown whether operators make accurate
+decisions under realistic workload conditions or how interrupt frequency
+affects their attention over time.
+
+\vspace{-0.3em}
+\textbf{Assumes cooperative tool use.} The framework intercepts declared
+tool calls routed through \texttt{MonitoredIO}. It cannot guard against
+a backdoor LLM that exfiltrates data through a channel not exposed as a
+tool--for example, by encoding information steganographically in model
+outputs consumed by a co-process, by making direct system calls if the
+model has code-execution access, or by exploiting side channels in the
+host environment. The monitor operates at the application layer; closing
+that gap requires system-level isolation such as network namespace
+sandboxing or OS-level mandatory access control, not application-layer
+hooks. In this sense, the current framework is best understood as a defense
+against \emph{unintended} data leakage and prompt-injection attacks, not
+against a model that has been compromised at the weights level.
+
+\vspace{-1em}
+\subsection{Future Work}
+\vspace{-0.5em}
+
+\textbf{Richer taint and policy models.} The most impactful near-term
+extension is context-aware taint: permitting a transformed artifact to shed
+its source label if the transformation can be verified to have removed all
+sensitive content. One approach is to route transformed artifacts through a
+lightweight PII detection model that certifies redaction before allowing a
+label downgrade. On the policy side, a lightweight DSL for per-user and
+per-role rules, loadable at runtime from a configuration file, would make
+the framework practical in multi-tenant environments where different agents
+and operators have different trust levels and data-handling obligations.
+
+\vspace{-0.3em}
+\textbf{Principled evaluation platform.} The monitoring infrastructure
+provides a natural substrate for adversarial testing. One direction is
+LLM-synthesized attack scenarios: use a red-team model to generate novel
+tool-call sequences specifically targeting gaps in the six named rules, then
+expand the rule set to cover them. This would replace the current manually
+authored sanity suite with a continuously growing, model-generated test
+corpus. A complementary direction is a red-team/blue-team arena in which a
+simulated attacker model and the policy engine compete iteratively over many
+runs, surfacing the empirical boundary of what rule-based enforcement can and
+cannot catch and providing a more principled measure of robustness than
+pass/fail correctness alone.
+
+\bibliographystyle{iclr2025_conference}
+\bibliography{ref}
+
+\end{document}
